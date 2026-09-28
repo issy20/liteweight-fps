@@ -23,3 +23,31 @@ impl Aabb {
         (center.x - cx) * (center.x - cx) + (center.z - cz) * (center.z - cz) < radius * radius
     }
 }
+
+impl Aabb {
+    /// 正規化した射線の始点から最初の交点までの距離。内部始点は0。
+    pub fn ray_distance(&self, origin: Vec3, direction: Vec3) -> Option<f32> {
+        if !origin.is_finite() || !direction.is_finite() || direction.length_squared() < 1e-12 {
+            return None;
+        }
+        let direction = direction.normalize();
+        let mut near = 0.0_f32;
+        let mut far = f32::INFINITY;
+        for axis in 0..3 {
+            if direction[axis].abs() < 1e-8 {
+                if origin[axis] < self.min[axis] || origin[axis] > self.max[axis] {
+                    return None;
+                }
+            } else {
+                let a = (self.min[axis] - origin[axis]) / direction[axis];
+                let b = (self.max[axis] - origin[axis]) / direction[axis];
+                near = near.max(a.min(b));
+                far = far.min(a.max(b));
+                if near > far {
+                    return None;
+                }
+            }
+        }
+        Some(near)
+    }
+}

@@ -12,7 +12,7 @@ pub struct Scene {
     pub indices: Vec<u16>,
 }
 impl Scene {
-    fn cube(&mut self, center: Vec3, size: Vec3, color: [f32; 3]) {
+    pub fn cube(&mut self, center: Vec3, size: Vec3, color: [f32; 3]) {
         let corners = [
             [-1., -1., -1.],
             [1., -1., -1.],

@@ -1,7 +1,16 @@
 use liteweight_fps::{
-    engine::window::WindowRenderer,
+    engine::{
+        audio::{Audio, Sound},
+        window::WindowRenderer,
+    },
     physics::Aabb,
-    simulation::{player::Input, time::FixedStep, Player},
+    simulation::{
+        combat::Combat,
+        player::Input,
+        time::FixedStep,
+        weapon::{FireInput, Weapon},
+        Player,
+    },
     world, Options, Run,
 };
 use std::{
@@ -11,7 +20,7 @@ use std::{
 use winit::{
     application::ApplicationHandler,
     dpi::{LogicalSize, PhysicalSize},
-    event::{ElementState, WindowEvent},
+    event::{ElementState, MouseButton, WindowEvent},
     event_loop::{ActiveEventLoop, ControlFlow, EventLoop},
     keyboard::{KeyCode, PhysicalKey},
     window::{CursorGrabMode, Window, WindowId},
@@ -27,6 +36,11 @@ struct App {
     player: Player,
     colliders: Vec<Aabb>,
     input: Input,
+    weapon: Weapon,
+    fire_input: FireInput,
+    combat: Combat,
+    audio: Option<Audio>,
+    title: String,
     capture_requested: bool,
     captured: bool,
     fixed: FixedStep,
@@ -35,6 +49,41 @@ struct App {
     error: Option<String>,
 }
 impl App {
+    fn fire(&mut self) {
+        let forward = self.player.aim_direction(self.weapon.recoil);
+        let moving = self.player.velocity.length_squared() > 0.01;
+        let spread = self.weapon.spread(moving);
+        if !self.weapon.fire() {
+            return;
+        }
+        // 発砲番号から再現可能な円盤内の拡散。反動を加える前の射線を使う。
+        let n = self
+            .combat
+            .shots
+            .wrapping_mul(1664525)
+            .wrapping_add(1013904223);
+        let angle = (n & 65535) as f32 / 65536. * std::f32::consts::TAU;
+        let radius = ((n >> 16) as f32 / 65536.).sqrt() * spread;
+        let right = forward.cross(glam::Vec3::Y).normalize();
+        let up = right.cross(forward);
+        let direction = (forward + (right * angle.cos() + up * angle.sin()) * radius).normalize();
+        let shot = self.combat.shoot(
+            self.player.position,
+            direction,
+            &self.colliders,
+            self.weapon.data.damage,
+        );
+        if let Some(audio) = &self.audio {
+            audio.play(Sound::Fire);
+            if shot.killed {
+                audio.play(Sound::Kill);
+            } else if shot.headshot {
+                audio.play(Sound::Head);
+            } else if shot.hit {
+                audio.play(Sound::Hit);
+            }
+        }
+    }
     fn finish(&mut self, event_loop: &ActiveEventLoop, completed: bool) {
         if let Some(run) = &mut self.benchmark {
             run.save(completed);
@@ -72,13 +121,22 @@ impl App {
             r.window.set_cursor_visible(true);
         }
         self.captured = false;
+        self.input = Input::default();
+        self.fire_input.clear();
+        self.fixed = FixedStep::new(60, 5);
+        self.clock = Instant::now();
     }
-    fn update_title(&self) {
+    fn update_title(&mut self) {
         if let Some(r) = &self.renderer {
             let (w, h) = r.internal_size();
-            r.window.set_title(&format!(
-                "liteweight-fps M2 | {w}×{h} | WASD移動 Shift:ダッシュ Space:ジャンプ Esc:解除/終了"
-            ));
+            let title = format!(
+                "liteweight-fps M3 | {w}×{h} | AR {}/30 | Hits {}/{} | LMB:Fire RMB:ADS R:Reload Esc:Pause",
+                self.weapon.ammo, self.combat.hits, self.combat.shots
+            );
+            if title != self.title {
+                r.window.set_title(&title);
+                self.title = title;
+            }
         }
     }
 }
@@ -93,7 +151,7 @@ impl ApplicationHandler for App {
             return;
         }
         let attributes = Window::default_attributes()
-            .with_title("liteweight-fps M2")
+            .with_title("liteweight-fps M3")
             .with_resizable(self.benchmark.is_none())
             .with_inner_size(LogicalSize::new(960., 540.));
         let window = match event_loop.create_window(attributes) {
@@ -124,6 +182,12 @@ impl ApplicationHandler for App {
                     run.set_initial_display(size.width, size.height);
                 }
                 self.renderer = Some(r);
+                if self.benchmark.is_none() {
+                    match Audio::new() {
+                        Ok(audio) => self.audio = Some(audio),
+                        Err(e) => eprintln!("音声なしで続行: {e}"),
+                    }
+                }
                 self.smoke_started = Some(Instant::now());
                 self.capture_requested = true;
                 self.try_capture();
@@ -134,6 +198,7 @@ impl ApplicationHandler for App {
     }
     fn suspended(&mut self, _: &ActiveEventLoop) {
         self.suspended = true;
+        self.release_capture();
         if let Some(r) = &mut self.renderer {
             let _ = r.resize(PhysicalSize::new(0, 0));
         }
@@ -149,8 +214,10 @@ impl ApplicationHandler for App {
     ) {
         if let winit::event::DeviceEvent::MouseMotion { delta } = event {
             if self.captured && self.benchmark.is_none() {
-                self.player
-                    .look(delta.0 as f32 * 0.002, delta.1 as f32 * 0.002);
+                self.player.look(
+                    delta.0 as f32 * 0.002 * (1. - 0.35 * self.weapon.ads),
+                    delta.1 as f32 * 0.002 * (1. - 0.35 * self.weapon.ads),
+                );
             }
         }
     }
@@ -174,6 +241,7 @@ impl ApplicationHandler for App {
                 self.occluded = occluded;
                 self.clock = Instant::now();
                 if occluded {
+                    self.release_capture();
                     if let Some(run) = &mut self.benchmark {
                         run.measurement.valid = false;
                     }
@@ -192,6 +260,22 @@ impl ApplicationHandler for App {
                     }
                 }
             }
+            WindowEvent::MouseInput { state, button, .. } if self.benchmark.is_none() => {
+                let pressed = state == ElementState::Pressed;
+                if !self.captured {
+                    if pressed && button == MouseButton::Left {
+                        self.capture_requested = true;
+                        self.try_capture();
+                        self.clock = Instant::now();
+                    }
+                } else {
+                    match button {
+                        MouseButton::Left => self.fire_input.set_trigger(pressed),
+                        MouseButton::Right => self.fire_input.ads = pressed,
+                        _ => {}
+                    }
+                }
+            }
             WindowEvent::KeyboardInput { event, .. } => {
                 let pressed = event.state == ElementState::Pressed;
                 if self.benchmark.is_none() {
@@ -203,6 +287,10 @@ impl ApplicationHandler for App {
                             } else {
                                 self.finish(event_loop, false);
                             }
+                        }
+                        _ if !self.captured => {}
+                        PhysicalKey::Code(KeyCode::KeyR) if pressed && !event.repeat => {
+                            self.fire_input.reload = true
                         }
                         PhysicalKey::Code(KeyCode::KeyA) => self.input.left = pressed,
                         PhysicalKey::Code(KeyCode::KeyD) => self.input.right = pressed,
@@ -228,29 +316,51 @@ impl ApplicationHandler for App {
                 if self.suspended || self.occluded {
                     return;
                 }
-                let Some(r) = &mut self.renderer else {
-                    return;
-                };
-                if !r.drawable() {
+                if !self.renderer.as_ref().is_some_and(|r| r.drawable()) {
                     return;
                 }
                 let now = Instant::now();
                 let dt = now.duration_since(self.clock).as_secs_f64();
                 self.clock = now;
-                let colliders = std::mem::take(&mut self.colliders);
-                let updates = self.fixed.updates(dt);
-                let input = self.input;
-                self.input.jump = false;
-                for _ in 0..updates {
-                    self.player
-                        .move_with_collision(&colliders, input, 1.0 / 60.0);
+                if self.captured && self.benchmark.is_none() {
+                    if std::mem::take(&mut self.fire_input.reload) && self.weapon.reload() {
+                        if let Some(audio) = &self.audio {
+                            audio.play(Sound::Reload);
+                        }
+                    }
+                    let updates = self.fixed.updates(dt);
+                    for _ in 0..updates {
+                        let input = self.input;
+                        self.input.jump = false;
+                        self.player
+                            .move_with_collision(&self.colliders, input, 1. / 60.);
+                        self.weapon.advance(1. / 60., self.fire_input.ads);
+                        self.combat.advance(1. / 60.);
+                        if self.fire_input.take_trigger() {
+                            self.fire();
+                        }
+                    }
+                    // 60Hz更新の間でも押下を受け付ける。冷却時間の更新は固定ステップ。
+                    if updates == 0 && self.fire_input.take_trigger() {
+                        self.fire();
+                    }
                 }
-                self.colliders = colliders;
+                self.update_title();
+                let r = self.renderer.as_mut().unwrap();
                 let (w, h) = r.internal_size();
                 let matrix = if let Some(run) = &self.benchmark {
                     run.matrix(w, h, false)
                 } else {
-                    self.player.view_matrix(w as f32 / h as f32)
+                    let aspect = w as f32 / h as f32;
+                    r.update_extras(
+                        &liteweight_fps::ui::world_mesh(&self.combat),
+                        &liteweight_fps::ui::hud_mesh(&self.weapon, &self.combat, aspect),
+                    );
+                    self.player.view_matrix_with(
+                        aspect,
+                        70. - 20. * self.weapon.ads,
+                        self.weapon.recoil,
+                    )
                 };
                 match r.render(matrix) {
                     Ok(true) => {
@@ -306,7 +416,7 @@ impl ApplicationHandler for App {
                         self.smoke_step += 1;
                         self.update_title();
                     } else {
-                        println!("M2 smoke completed");
+                        println!("M3 smoke completed");
                         self.finish(event_loop, true);
                         return;
                     }
@@ -334,7 +444,7 @@ fn main() {
     let start = Instant::now();
     let args: Vec<_> = std::env::args().skip(1).collect();
     if args == ["--help"] {
-        println!("liteweight-fps M2: 一人称視点のアリーナ。起動直後にマウスを捕捉します。\nWASD:移動 Shift:ダッシュ Space:ジャンプ Esc:捕捉解除/解除中は終了 Q:終了\n--smoke: 自動リサイズ確認後に終了\n--benchmark [M0と同じ引数]: M0シーンで描画基盤の回帰測定（--mode inputは非対応）");
+        println!("liteweight-fps M3: 一人称視点のアリーナ。起動直後にマウスを捕捉します。\nWASD:移動 Shift:ダッシュ Space:ジャンプ LMB:射撃 RMB:ADS R:リロード Esc:捕捉解除/解除中は終了 左クリック:再捕捉 Q:終了\n--smoke: 自動リサイズ確認後に終了\n--benchmark [M0と同じ引数]: M0シーンで描画基盤の回帰測定（--mode inputは非対応）");
         return;
     }
     let smoke = args == ["--smoke"];
@@ -383,6 +493,11 @@ fn main() {
         player: Player::new(),
         colliders: world::arena_colliders(),
         input: Input::default(),
+        weapon: Weapon::default(),
+        fire_input: FireInput::default(),
+        combat: Combat::default(),
+        audio: None,
+        title: String::new(),
         capture_requested: false,
         captured: false,
         fixed: FixedStep::new(60, 5),

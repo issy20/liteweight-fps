@@ -1,12 +1,19 @@
 # liteweight-fps
 
-## M2: FPS移動
+## M3: AR・静止ターゲットのプレビュー
 
 wgpu+winitでアリーナを描画し、一人称視点のFPS操作ができるプレビューです。
 起動直後からマウスを捕捉して視点を回し、WASDで移動・Shiftでダッシュ・Spaceでジャンプできます。
 壁・遮蔽物との衝突判定（AABB近似）があり、突き抜けません。
-射撃・ADS・武器・BOT AIはM3以降の実装です。
-内部解像度と表示設定はM6で実装予定のため、M2のプレビューでは固定です。
+ARの連射・ADS・反動・リロードと、静止標的へのヒットスキャンを実装しています。
+ARは30発、600 RPM、胴体25／頭部50ダメージ、リロード2秒（予備弾無限）。
+開始位置の正面4m、左前方、右前方にオレンジ色の標的を配置しています。
+標的はHP100で撃破時に即時リセットします。BOT AIやリスポーン制御はM5の範囲です。
+弾数、照準、ヒットマーカー（白:胴体／黄:頭部／赤:撃破）、被弾反応、マズルフラッシュ、
+着弾表現、簡易ARシルエットと合成効果音を実装しています。
+
+**M3の実装検証中です。操作感の実機確認とM3負荷での性能比較は未完了です。**
+内部解像度と表示設定は従来どおり固定です。
 
 ```sh
 cargo run --release
@@ -18,7 +25,10 @@ cargo run --release
 | W / A / S / D | 前後左右移動（斜めは正規化） |
 | Shift | ダッシュ（押下中） |
 | Space | ジャンプ |
-| Esc | 捕捉中は捕捉解除、解除中は終了 |
+| 左クリック | 捕捉中は連射、解除中は再捕捉（そのクリックでは発砲しない） |
+| 右クリック | ADS（押下中） |
+| R | リロード（射撃より優先、満弾時は無効） |
+| Esc | 一時停止・捕捉解除、解除中は終了 |
 | Q / 閉じるボタン | 終了 |
 
 ウィンドウの端をドラッグして表示サイズを変更できます。
@@ -29,7 +39,7 @@ cargo run --release
 # GPUのないCIでも実行できるテスト（既存M0/M1テストを含む）
 cargo test --locked --all-targets
 # 実機GPUで深度とリサイズ後の出力を読み戻して検証
-cargo test --test m1_gpu -- --ignored
+cargo test --test m1_gpu --test m3_gpu -- --ignored
 # 約5秒でウィンドウを自動変更して終了
 cargo run --release -- --smoke
 ```
@@ -45,14 +55,19 @@ GPUテストは通常の`cargo test`ではignoreし、GPUを取得できる環�
 - `src/simulation/player.rs`: 一人称プレイヤー（視点・移動・ジャンプ・重力・衝突）。
 - `src/simulation/time.rs`: 固定タイムステップの管理。
 - `src/physics/mod.rs`: AABB衝突判定。
-- `src/main.rs`: M2プレビューのイベント処理と操作。
+- `src/simulation/weapon.rs`: ARデータ、発射・ADS・反動・リロード状態。
+- `src/simulation/combat.rs`: 静止標的・最前面ヒットスキャン・命中イベント。
+- `src/ui/`: 標的と最小HUDのメッシュ生成。
+- `src/engine/audio.rs`: rodioによる短いオリジナル合成効果音。
+- `src/main.rs`: M3プレビューのイベント処理と操作。
 
-[M1の計画・検証記録](docs/m1-plan.md)、[M2の計画・検証記録](docs/m2-plan.md)を参照してください。
+[M1の計画・検証記録](docs/m1-plan.md)、[M2の計画・検証記録](docs/m2-plan.md)、[M3の計画・検証記録](docs/m3-plan.md)を参照してください。
 
 ### M1/M2の性能回帰測定
 
 M0ベンチマークの描画実装は比較基準として保持しています。M1/M2は同じM0シーン・カメラ・計測器を使う
-`--benchmark`モードで比較できます。通常プレビューにはダミーを表示しません。
+`--benchmark`モードで比較できます。このモードではM3の武器・標的・HUD・音声は動かさないため、
+M3ゲームプレイ全体の性能測定には使えません。
 
 ```sh
 ./target/release/bench-wgpu --warmup 5 --seconds 30 --output results/m0-reference
@@ -82,6 +97,8 @@ Rust製の軽量FPSに向けた**描画基盤の比較用プロトタイプ**で
 ## ビルドと検証
 
 Rustのstableツールチェーンと各OSのネイティブ開発環境が必要です。
+音声用のrodio/cpalを追加しています。LinuxではALSA開発パッケージ（Debian/Ubuntu: `libasound2-dev`、`pkg-config`）、macOSではXcode Command Line Toolsが必要です。
+音声デバイス初期化に失敗した場合は理由を標準エラーに表示し、無音で続行します。
 開発時の検証環境はRust 1.98.1 / macOS Apple Siliconです。
 WindowsではMSVC Build Tools、macOSではXcode Command Line Toolsを用意してください。
 LinuxではCコンパイラ・pkg-config・Wayland/XKB開発ライブラリと、実行時に対応するGPUドライバーが必要です。

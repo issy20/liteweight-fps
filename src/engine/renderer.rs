@@ -74,6 +74,9 @@ pub struct SceneRenderer {
     targets: Targets,
     count: u32,
     layout: FrameLayout,
+    dynamic: DynamicMesh,
+    hud: DynamicMesh,
+    hud_pipeline: wgpu::RenderPipeline,
 }
 impl SceneRenderer {
     pub fn new(
@@ -180,6 +183,43 @@ impl SceneRenderer {
             multiview: None,
             cache: None,
         });
+        let hud_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("HUD"),
+            source: wgpu::ShaderSource::Wgsl(
+                include_str!("../../assets/shaders/scene.wgsl").into(),
+            ),
+        });
+        let hud_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("HUD"),
+            layout: Some(&pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &hud_shader,
+                entry_point: Some("vs"),
+                compilation_options: Default::default(),
+                buffers: &[wgpu::VertexBufferLayout {
+                    array_stride: std::mem::size_of::<Vertex>() as u64,
+                    step_mode: wgpu::VertexStepMode::Vertex,
+                    attributes: &wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3],
+                }],
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &hud_shader,
+                entry_point: Some("fs"),
+                compilation_options: Default::default(),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: wgpu::TextureFormat::Rgba8Unorm,
+                    blend: None,
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+            }),
+            primitive: Default::default(),
+            depth_stencil: None,
+            multisample: Default::default(),
+            multiview: None,
+            cache: None,
+        });
+        let dynamic = DynamicMesh::new(device, &layout);
+        let hud = DynamicMesh::new(device, &layout);
         let blit_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: None,
             entries: &[
@@ -247,6 +287,9 @@ impl SceneRenderer {
             targets,
             count: mesh.indices.len() as u32,
             layout: layout_state,
+            dynamic,
+            hud,
+            hud_pipeline,
         })
     }
     fn check_size(device: &wgpu::Device, width: u32, height: u32) -> Result<(), String> {
@@ -324,6 +367,63 @@ impl SceneRenderer {
         pass.set_index_buffer(self.index.slice(..), wgpu::IndexFormat::Uint16);
         pass.draw_indexed(0..self.count, 0, 0..1);
     }
+    /// 小規模な標的・短命エフェクトのみを固定容量のGPUバッファへ転送する。
+    pub fn update_extras(&mut self, queue: &wgpu::Queue, world: &Scene, hud: &Scene) {
+        self.dynamic.upload(queue, world);
+        self.hud.upload(queue, hud);
+    }
+    pub fn encode_extras(
+        &self,
+        queue: &wgpu::Queue,
+        encoder: &mut wgpu::CommandEncoder,
+        matrix: Mat4,
+    ) {
+        for (mesh, hud) in [(&self.dynamic, false), (&self.hud, true)] {
+            if mesh.count == 0 {
+                continue;
+            }
+            let matrix = if hud { Mat4::IDENTITY } else { matrix };
+            queue.write_buffer(
+                &mesh.uniform,
+                0,
+                bytemuck::cast_slice(&matrix.to_cols_array()),
+            );
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("M3 extras"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &self.targets.color_view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: if hud {
+                    None
+                } else {
+                    Some(wgpu::RenderPassDepthStencilAttachment {
+                        view: &self.targets.depth_view,
+                        depth_ops: Some(wgpu::Operations {
+                            load: wgpu::LoadOp::Load,
+                            store: wgpu::StoreOp::Store,
+                        }),
+                        stencil_ops: None,
+                    })
+                },
+                timestamp_writes: None,
+                occlusion_query_set: None,
+            });
+            pass.set_pipeline(if hud {
+                &self.hud_pipeline
+            } else {
+                &self.pipeline
+            });
+            pass.set_bind_group(0, &mesh.bind, &[]);
+            pass.set_vertex_buffer(0, mesh.vertex.slice(..));
+            pass.set_index_buffer(mesh.index.slice(..), wgpu::IndexFormat::Uint16);
+            pass.draw_indexed(0..mesh.count, 0, 0..1);
+        }
+    }
     pub fn encode_present(&self, encoder: &mut wgpu::CommandEncoder, view: &wgpu::TextureView) {
         let Some((x, y, w, h)) = self.layout.viewport() else {
             return;
@@ -346,5 +446,51 @@ impl SceneRenderer {
         pass.set_pipeline(&self.blit_pipeline);
         pass.set_bind_group(0, &self.targets.blit_bind, &[]);
         pass.draw(0..3, 0..1);
+    }
+}
+
+struct DynamicMesh {
+    vertex: wgpu::Buffer,
+    index: wgpu::Buffer,
+    uniform: wgpu::Buffer,
+    bind: wgpu::BindGroup,
+    count: u32,
+}
+impl DynamicMesh {
+    fn new(device: &wgpu::Device, layout: &wgpu::BindGroupLayout) -> Self {
+        let buffer = |label, size, usage| {
+            device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some(label),
+                size,
+                usage: usage | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            })
+        };
+        let vertex = buffer("dynamic vertices", 4096 * 24, wgpu::BufferUsages::VERTEX);
+        let index = buffer("dynamic indices", 8192 * 2, wgpu::BufferUsages::INDEX);
+        let uniform = buffer("dynamic matrix", 64, wgpu::BufferUsages::UNIFORM);
+        let bind = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: None,
+            layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: uniform.as_entire_binding(),
+            }],
+        });
+        Self {
+            vertex,
+            index,
+            uniform,
+            bind,
+            count: 0,
+        }
+    }
+    fn upload(&mut self, queue: &wgpu::Queue, mesh: &Scene) {
+        assert!(mesh.vertices.len() <= 4096 && mesh.indices.len() <= 8192);
+        self.count = mesh.indices.len() as u32;
+        if self.count > 0 {
+            queue.write_buffer(&self.vertex, 0, bytemuck::cast_slice(&mesh.vertices));
+            queue.write_buffer(&self.index, 0, bytemuck::cast_slice(&mesh.indices));
+        }
     }
 }

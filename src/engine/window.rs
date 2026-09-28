@@ -118,6 +118,9 @@ impl WindowRenderer {
     pub fn set_internal_size(&mut self, width: u32, height: u32) -> Result<(), String> {
         self.scene.set_internal_size(&self.device, width, height)
     }
+    pub fn update_extras(&mut self, world: &Scene, hud: &Scene) {
+        self.scene.update_extras(&self.queue, world, hud);
+    }
     pub fn render(&mut self, matrix: Mat4) -> Result<bool, wgpu::SurfaceError> {
         if !self.drawable {
             return Ok(false);
@@ -126,6 +129,7 @@ impl WindowRenderer {
         let view = frame.texture.create_view(&Default::default());
         let mut encoder = self.device.create_command_encoder(&Default::default());
         self.scene.encode_scene(&self.queue, &mut encoder, matrix);
+        self.scene.encode_extras(&self.queue, &mut encoder, matrix);
         self.scene.encode_present(&mut encoder, &view);
         self.queue.submit(Some(encoder.finish()));
         self.window.pre_present_notify();
