@@ -1,0 +1,145 @@
+{
+  "started": "2026-09-27T20:50:53+0900",
+  "runs": [
+    {
+      "label": "m0",
+      "repeat": 1,
+      "command": [
+        "/private/tmp/liteweight-fps-m0-wgpu",
+        "--width",
+        "1280",
+        "--height",
+        "720",
+        "--dummies",
+        "5",
+        "--warmup",
+        "5",
+        "--seconds",
+        "30",
+        "--vsync",
+        "on",
+        "--output",
+        "/Users/issy20/game-dev/liteweight-fps/results/m1-regression-20260927/m0-1"
+      ],
+      "exit_code": 0
+    },
+    {
+      "label": "m1",
+      "repeat": 1,
+      "command": [
+        "/Users/issy20/game-dev/liteweight-fps/target/release/liteweight-fps",
+        "--benchmark",
+        "--width",
+        "1280",
+        "--height",
+        "720",
+        "--dummies",
+        "5",
+        "--warmup",
+        "5",
+        "--seconds",
+        "30",
+        "--vsync",
+        "on",
+        "--output",
+        "/Users/issy20/game-dev/liteweight-fps/results/m1-regression-20260927/m1-1"
+      ],
+      "exit_code": 0
+    },
+    {
+      "label": "m1",
+      "repeat": 2,
+      "command": [
+        "/Users/issy20/game-dev/liteweight-fps/target/release/liteweight-fps",
+        "--benchmark",
+        "--width",
+        "1280",
+        "--height",
+        "720",
+        "--dummies",
+        "5",
+        "--warmup",
+        "5",
+        "--seconds",
+        "30",
+        "--vsync",
+        "on",
+        "--output",
+        "/Users/issy20/game-dev/liteweight-fps/results/m1-regression-20260927/m1-2"
+      ],
+      "exit_code": 0
+    },
+    {
+      "label": "m0",
+      "repeat": 2,
+      "command": [
+        "/private/tmp/liteweight-fps-m0-wgpu",
+        "--width",
+        "1280",
+        "--height",
+        "720",
+        "--dummies",
+        "5",
+        "--warmup",
+        "5",
+        "--seconds",
+        "30",
+        "--vsync",
+        "on",
+        "--output",
+        "/Users/issy20/game-dev/liteweight-fps/results/m1-regression-20260927/m0-2"
+      ],
+      "exit_code": 0
+    },
+    {
+      "label": "m0",
+      "repeat": 3,
+      "command": [
+        "/private/tmp/liteweight-fps-m0-wgpu",
+        "--width",
+        "1280",
+        "--height",
+        "720",
+        "--dummies",
+        "5",
+        "--warmup",
+        "5",
+        "--seconds",
+        "30",
+        "--vsync",
+        "on",
+        "--output",
+        "/Users/issy20/game-dev/liteweight-fps/results/m1-regression-20260927/m0-3"
+      ],
+      "exit_code": 0
+    },
+    {
+      "label": "m1",
+      "repeat": 3,
+      "command": [
+        "/Users/issy20/game-dev/liteweight-fps/target/release/liteweight-fps",
+        "--benchmark",
+        "--width",
+        "1280",
+        "--height",
+        "720",
+        "--dummies",
+        "5",
+        "--warmup",
+        "5",
+        "--seconds",
+        "30",
+        "--vsync",
+        "on",
+        "--output",
+        "/Users/issy20/game-dev/liteweight-fps/results/m1-regression-20260927/m1-3"
+      ],
+      "exit_code": 0
+    }
+  ],
+  "binary_sha256": {
+    "/private/tmp/liteweight-fps-m0-wgpu": "edc19ad5f6a2e4a2b1a293a6c097719245bd6aab34273976b38de6e5eb2742ef",
+    "/Users/issy20/game-dev/liteweight-fps/target/release/liteweight-fps": "594bb269b0380873872cb4247cda2423936df8fe65b0235cbf087f2af923cb2f"
+  },
+  "completed": "2026-09-27T20:54:26+0900"
+}

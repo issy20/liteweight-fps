@@ -1,0 +1,177 @@
+{
+  "arch": "aarch64",
+  "backend": "wgpu AdapterInfo { name: \"Apple M1\", vendor: 0, device: 0, device_type: IntegratedGpu, driver: \"\", driver_info: \"\", backend: Metal }",
+  "comparison_valid": true,
+  "completed": true,
+  "cpu_submit_mean_ms": 16.177347312013357,
+  "display_pixels_final": [
+    1920,
+    1080
+  ],
+  "display_pixels_initial": [
+    1920,
+    1080
+  ],
+  "draw_calls_per_frame": 2,
+  "frame_count": 1798,
+  "frame_statistics": {
+    "average_fps": 59.963609209471535,
+    "one_percent_low_fps": 52.64043562370334,
+    "p99_ms": 17.604874999999964
+  },
+  "gpu_frame_ms": null,
+  "mouse": {
+    "captured": false,
+    "delta_sum": [
+      0.0,
+      0.0
+    ],
+    "events": 0,
+    "pitch": 0.0,
+    "yaw": 0.0
+  },
+  "notes": [
+    "surface Bgra8Unorm, present Fifo, alpha Auto",
+    "focus lost or minimized (including startup transitions)"
+  ],
+  "options": {
+    "dummies": 5,
+    "height": 720,
+    "input": false,
+    "output": "/Users/issy20/game-dev/liteweight-fps/results/m0-20260927/wgpu-720p-5-1",
+    "seconds": 30.0,
+    "vsync": true,
+    "warmup": 5.0,
+    "width": 1280,
+    "window_system": "auto"
+  },
+  "os": "macos",
+  "release": true,
+  "rss_sampled_max_bytes": 66060288,
+  "rss_samples_bytes": [
+    [
+      5.010186166,
+      65945600
+    ],
+    [
+      6.01128325,
+      66011136
+    ],
+    [
+      7.028063458,
+      66060288
+    ],
+    [
+      8.043771708,
+      66027520
+    ],
+    [
+      9.044567291,
+      66027520
+    ],
+    [
+      10.060085708,
+      65503232
+    ],
+    [
+      11.06051225,
+      64208896
+    ],
+    [
+      12.061065375,
+      61947904
+    ],
+    [
+      13.077503916,
+      61964288
+    ],
+    [
+      14.07787275,
+      61980672
+    ],
+    [
+      15.094251166,
+      61980672
+    ],
+    [
+      16.094591583,
+      61997056
+    ],
+    [
+      17.111018708,
+      62029824
+    ],
+    [
+      18.111163166,
+      62029824
+    ],
+    [
+      19.128092375,
+      62029824
+    ],
+    [
+      20.144679541,
+      62029824
+    ],
+    [
+      21.144819958,
+      62029824
+    ],
+    [
+      22.161544416,
+      60801024
+    ],
+    [
+      23.17755275,
+      60817408
+    ],
+    [
+      24.178118875,
+      60817408
+    ],
+    [
+      25.194454791,
+      60817408
+    ],
+    [
+      26.194920375,
+      60817408
+    ],
+    [
+      27.19508625,
+      60817408
+    ],
+    [
+      28.211249208,
+      60833792
+    ],
+    [
+      29.211509083,
+      60833792
+    ],
+    [
+      30.228117541,
+      60899328
+    ],
+    [
+      31.244688,
+      60899328
+    ],
+    [
+      32.245236333,
+      60899328
+    ],
+    [
+      33.261515041,
+      60899328
+    ],
+    [
+      34.26208425,
+      60899328
+    ]
+  ],
+  "scene": "m0-cubes-v1",
+  "schema": 1,
+  "startup_to_first_submit_return_ms": 488.33074999999997,
+  "triangles": 252
+}

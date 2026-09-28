@@ -1,0 +1,2 @@
+wgpu AdapterInfo { name: "Apple M1", vendor: 0, device: 0, device_type: IntegratedGpu, driver: "", driver_info: "", backend: Metal }; surface Bgra8Unorm, present Fifo, alpha Auto
+保存: /Users/issy20/game-dev/liteweight-fps/results/m1-regression-20260927/m1-2.json (1799 frames)

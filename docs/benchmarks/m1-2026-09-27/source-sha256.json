@@ -1,0 +1,19 @@
+{
+  "Cargo.toml": "67dd7f17aa741dbeefabf7cdadd605a0cce68576aca8c19988269b49e6055449",
+  "Cargo.lock": "8316bd82c13a3ef46daf56532e69bc57ef5c377a7a297b86dca3c75df3a927d9",
+  "src/bin/bench-miniquad.rs": "3cbd74d3eceff50965c709822ee236ad9d60ad8c80a921399fc7e2b813004eb9",
+  "src/bin/bench-wgpu.rs": "e0ce9f9731ab747bc7a529200a13e5205d1258805edd3a582861d6407b6e2966",
+  "src/engine/layout.rs": "af6f8fdbb9e8bed40851cf9f40c3412beb2a858ec5db6acae42918ccdffeca52",
+  "src/engine/mod.rs": "621164c976f09d031b2eea0098a69dc45d2f599f8b5169741b8c32ad77dc684d",
+  "src/engine/renderer.rs": "dd348aee59291142ebbd768eca0ea1d21302e10376741a4b1f9a330a91d44617",
+  "src/engine/window.rs": "a7f3888fffb83769ba1a84fb448e15efca160b2a8b7ed0499ed7c24f46932f8f",
+  "src/lib.rs": "27adef8ac327746715abcd2aa74ec6faa6a8186c498de7eddfb53225683fbd74",
+  "src/main.rs": "b26124185ebdf18294feb7ad7b0fe031e494dd55ff452f776ae1e75538ce3938",
+  "src/world/mod.rs": "0fbf8a939c8420b26a22f932f7168cba75bdace136ec1b37c8867afeb17efea2",
+  "assets/shaders/blit.frag": "eafe55e8f53e491db57f6ed88838d0d65ca2c49d62fed799824b28e40bbd2d56",
+  "assets/shaders/blit.vert": "f839923884d9830a45c78af6e879f11deef1bb3b9e857a4c6b10d42a1b05af5e",
+  "assets/shaders/blit.wgsl": "9c2ae5e53a44b31f9119947e49359bb4fca2d15c9c7c2e389f653abc7637b495",
+  "assets/shaders/scene.frag": "fa971e7ccde3b063b37e4118fe43d484ea57f3fc9b195597eaa0cdb4a99f8df2",
+  "assets/shaders/scene.vert": "f5d79509d7134022ad0e3cfa6c890144b491dd1bcd2b8c9ec2edf2a4ee2b212f",
+  "assets/shaders/scene.wgsl": "cd086d0c8a4651dd182dd922efb985d34d6c33fc9ae72feca454f156121350a5"
+}

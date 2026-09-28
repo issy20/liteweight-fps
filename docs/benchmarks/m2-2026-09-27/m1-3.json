@@ -1,0 +1,178 @@
+{
+  "arch": "aarch64",
+  "backend": "wgpu AdapterInfo { name: \"Apple M1\", vendor: 0, device: 0, device_type: IntegratedGpu, driver: \"\", driver_info: \"\", backend: Metal }",
+  "comparison_valid": true,
+  "completed": true,
+  "cpu_submit_mean_ms": 16.537251299610897,
+  "display_pixels_final": [
+    1920,
+    1080
+  ],
+  "display_pixels_initial": [
+    1920,
+    1080
+  ],
+  "draw_calls_per_frame": 2,
+  "frame_count": 1799,
+  "frame_statistics": {
+    "average_fps": 59.99818137741499,
+    "one_percent_low_fps": 57.73763914129379,
+    "p99_ms": 17.120583000000522
+  },
+  "gpu_frame_ms": null,
+  "mouse": {
+    "captured": false,
+    "delta_sum": [
+      0.0,
+      0.0
+    ],
+    "events": 0,
+    "pitch": 0.0,
+    "yaw": 0.0
+  },
+  "notes": [
+    "surface Bgra8Unorm, present Fifo, alpha Auto",
+    "M2 Player+collision, M0 scene/camera/measurement conditions",
+    "focus lost or minimized (including startup transitions)"
+  ],
+  "options": {
+    "dummies": 5,
+    "height": 720,
+    "input": false,
+    "output": "/Users/issy20/game-dev/liteweight-fps/results/m2-regression-20260927-b/m1-3",
+    "seconds": 30.0,
+    "vsync": true,
+    "warmup": 5.0,
+    "width": 1280,
+    "window_system": "auto"
+  },
+  "os": "macos",
+  "release": true,
+  "rss_sampled_max_bytes": 63111168,
+  "rss_samples_bytes": [
+    [
+      5.005703,
+      62685184
+    ],
+    [
+      6.005934417,
+      62799872
+    ],
+    [
+      7.022552,
+      62799872
+    ],
+    [
+      8.022695625,
+      62799872
+    ],
+    [
+      9.039301417,
+      62799872
+    ],
+    [
+      10.055883125,
+      62816256
+    ],
+    [
+      11.072280708,
+      62816256
+    ],
+    [
+      12.072292583,
+      62816256
+    ],
+    [
+      13.07234,
+      62832640
+    ],
+    [
+      14.07259175,
+      62914560
+    ],
+    [
+      15.089216583,
+      62930944
+    ],
+    [
+      16.089221208,
+      62947328
+    ],
+    [
+      17.105673917,
+      62963712
+    ],
+    [
+      18.105731292,
+      63062016
+    ],
+    [
+      19.106124167,
+      63094784
+    ],
+    [
+      20.122529958,
+      63111168
+    ],
+    [
+      21.139048417,
+      63111168
+    ],
+    [
+      22.139326375,
+      63111168
+    ],
+    [
+      23.139442208,
+      63111168
+    ],
+    [
+      24.156124708,
+      62914560
+    ],
+    [
+      25.156138292,
+      62914560
+    ],
+    [
+      26.17267325,
+      62914560
+    ],
+    [
+      27.172861583,
+      62914560
+    ],
+    [
+      28.189595375,
+      62783488
+    ],
+    [
+      29.206104833,
+      62832640
+    ],
+    [
+      30.206148958,
+      62832640
+    ],
+    [
+      31.222904333,
+      62832640
+    ],
+    [
+      32.222941542,
+      62832640
+    ],
+    [
+      33.23956525,
+      62832640
+    ],
+    [
+      34.239565417,
+      62832640
+    ]
+  ],
+  "scene": "m0-cubes-v1",
+  "schema": 1,
+  "startup_to_first_submit_return_ms": 176.689375,
+  "triangles": 252
+}

@@ -1,0 +1,178 @@
+{
+  "arch": "aarch64",
+  "backend": "miniquad OpenGl 4.1 Metal - 89.4",
+  "comparison_valid": true,
+  "completed": true,
+  "cpu_submit_mean_ms": 0.38328084529771883,
+  "display_pixels_final": [
+    1920,
+    1080
+  ],
+  "display_pixels_initial": [
+    1920,
+    1080
+  ],
+  "draw_calls_per_frame": 2,
+  "frame_count": 1797,
+  "frame_statistics": {
+    "average_fps": 59.96565347966412,
+    "one_percent_low_fps": 49.97388517458776,
+    "p99_ms": 17.7199580000007
+  },
+  "gpu_frame_ms": null,
+  "mouse": {
+    "captured": false,
+    "delta_sum": [
+      0.0,
+      0.0
+    ],
+    "events": 0,
+    "pitch": 0.0,
+    "yaw": 0.0
+  },
+  "notes": [
+    "swap_interval is a request; actual presentation interval must be verified",
+    "Miniquad cursor grab API has no success result; verify manually",
+    "macOS Miniquad uses OpenGL: Metal 0.4.11 offscreen pipeline fails Metal API validation. macOS GL uses a ~60 Hz timer; swap interval request is not reliable."
+  ],
+  "options": {
+    "dummies": 5,
+    "height": 720,
+    "input": false,
+    "output": "/Users/issy20/game-dev/liteweight-fps/results/m0-20260927/miniquad-720p-5-2",
+    "seconds": 30.0,
+    "vsync": true,
+    "warmup": 5.0,
+    "width": 1280,
+    "window_system": "auto"
+  },
+  "os": "macos",
+  "release": true,
+  "rss_sampled_max_bytes": 56492032,
+  "rss_samples_bytes": [
+    [
+      5.016750667,
+      56426496
+    ],
+    [
+      6.033249208,
+      56492032
+    ],
+    [
+      7.049953667,
+      56492032
+    ],
+    [
+      8.049966333,
+      56492032
+    ],
+    [
+      9.050025708,
+      56492032
+    ],
+    [
+      10.066508708,
+      56049664
+    ],
+    [
+      11.066653625,
+      50872320
+    ],
+    [
+      12.083344042,
+      50872320
+    ],
+    [
+      13.099975917,
+      50905088
+    ],
+    [
+      14.100030875,
+      50905088
+    ],
+    [
+      15.100048958,
+      50937856
+    ],
+    [
+      16.100101042,
+      50200576
+    ],
+    [
+      17.11632725,
+      50151424
+    ],
+    [
+      18.116817875,
+      50167808
+    ],
+    [
+      19.133468875,
+      50151424
+    ],
+    [
+      20.133659,
+      50184192
+    ],
+    [
+      21.150264292,
+      50184192
+    ],
+    [
+      22.150267583,
+      50184192
+    ],
+    [
+      23.150302583,
+      50184192
+    ],
+    [
+      24.150339167,
+      50184192
+    ],
+    [
+      25.166828833,
+      50184192
+    ],
+    [
+      26.166950083,
+      50200576
+    ],
+    [
+      27.183302542,
+      50200576
+    ],
+    [
+      28.183618667,
+      50216960
+    ],
+    [
+      29.183781042,
+      50216960
+    ],
+    [
+      30.184029375,
+      50200576
+    ],
+    [
+      31.200382458,
+      50200576
+    ],
+    [
+      32.216781458,
+      50200576
+    ],
+    [
+      33.217103292,
+      50200576
+    ],
+    [
+      34.233447792,
+      50200576
+    ]
+  ],
+  "scene": "m0-cubes-v1",
+  "schema": 1,
+  "startup_to_first_submit_return_ms": 183.838417,
+  "triangles": 252
+}

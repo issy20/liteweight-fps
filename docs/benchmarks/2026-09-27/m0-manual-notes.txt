@@ -1,0 +1,7 @@
+Both processes exited with code 0.
+wgpu completed the 120-second duration; captured input events: 218.
+Miniquad saved before the time limit (completed=false); captured input events: 935.
+The report does not distinguish Q from window-close termination.
+Miniquad stderr included:
+2026-09-27 16:27:42.367 bench-miniquad[63659:88625207] error messaging the mach port for IMKCFRunLoopWakeUpReliable
+Visual correctness and input feel await user confirmation. No diagnosis of the macOS message is established.
