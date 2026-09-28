@@ -9,6 +9,8 @@ pub const WALK_SPEED: f32 = 4.0;
 pub const DASH_SPEED: f32 = 6.5;
 pub const JUMP_VELOCITY: f32 = 4.2;
 pub const GRAVITY: f32 = 9.8;
+/// 衝突判定の丸め誤差許容。接触距離の拡大ではなく、f32精度の境界での誤接触を防ぐ。
+const COLLISION_EPSILON: f32 = 1e-4;
 
 /// 1フレームの入力状態。
 #[derive(Debug, Default, Clone, Copy)]
@@ -42,6 +44,18 @@ impl Default for Player {
 impl Player {
     pub fn new() -> Self {
         Self::default()
+    }
+    /// 足元の高さ。接地時は0。視点位置と視点高から算出する。
+    pub fn foot_height(&self) -> f32 {
+        self.position.y - EYE_HEIGHT
+    }
+    /// 衝突判定で使う身体中心。足元から身体高さの半分の位置。
+    pub fn body_center(&self) -> Vec3 {
+        Vec3::new(
+            self.position.x,
+            self.foot_height() + PLAYER_HEIGHT * 0.5,
+            self.position.z,
+        )
     }
     /// 相対角度を視点へ反映する。感度倍率は呼び出し側で掛ける。
     pub fn look(&mut self, dx: f32, dy: f32) {
@@ -118,14 +132,18 @@ impl Player {
         for axis in [0, 2] {
             self.position[axis] += horizontal[axis] * dt;
             self.velocity[axis] = horizontal[axis];
-            if Self::collides(colliders, self.position) {
+            if Self::collides(colliders, self.body_center()) {
                 self.position[axis] -= horizontal[axis] * dt;
                 self.velocity[axis] = 0.;
             }
         }
         self.position.y += self.velocity.y * dt;
-        if Self::collides(colliders, self.position) {
+        if Self::collides(colliders, self.body_center()) {
             self.position.y -= self.velocity.y * dt;
+            // 落下中の衝突は着地。上昇中の衝突は天井に当たった場合。
+            if self.velocity.y < 0. {
+                self.on_ground = true;
+            }
             self.velocity.y = 0.;
         }
         if self.position.y <= EYE_HEIGHT {
@@ -146,7 +164,9 @@ impl Player {
             let cz = center.z.clamp(c.min.z, c.max.z);
             let dx = center.x - cx;
             let dz = center.z - cz;
-            dx * dx + dz * dz < PLAYER_RADIUS * PLAYER_RADIUS
+            // f32の丸め誤差（壁面からちょうど半径の距離）で接触扱いになるのを防ぐ。
+            let r = PLAYER_RADIUS - COLLISION_EPSILON;
+            dx * dx + dz * dz < r * r
         })
     }
 }

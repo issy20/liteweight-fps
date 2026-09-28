@@ -73,9 +73,12 @@ fn nearer_surface_wins_in_both_draw_orders() {
             device.poll(wgpu::Maintain::Wait);
             receiver.recv().unwrap().unwrap();
             let bytes = slice.get_mapped_range();
-            assert_eq!(
-                &bytes[16 * 256 + 16 * 4..16 * 256 + 16 * 4 + 4],
-                &[255, 0, 0, 255]
+            // 中央ピクセルは手前の赤面が勝つ。細い表面模様（最大6%暗く）が掛かっても
+            // 赤成分が支配的であることを確認する。
+            let px = &bytes[16 * 256 + 16 * 4..16 * 256 + 16 * 4 + 4];
+            assert!(
+                px[0] >= 230 && px[1] < 40 && px[2] < 40 && px[3] == 255,
+                "中央ピクセルが手前の赤面になっていない: {px:?}"
             );
         }
     });
@@ -169,10 +172,13 @@ fn resized_targets_render_with_matching_depth_and_letterboxed_presentation() {
             device.poll(wgpu::Maintain::Wait);
             receiver.recv().unwrap().unwrap();
             let bytes = readback.slice(..).get_mapped_range();
-            assert_eq!(
-                &bytes[32 * 256 + 32 * 4..32 * 256 + 32 * 4 + 4],
-                &[255, 0, 0, 255]
+            // 中央は赤面。細い表面模様（最大6%暗く）が掛かっても赤成分が支配的。
+            let px = &bytes[32 * 256 + 32 * 4..32 * 256 + 32 * 4 + 4];
+            assert!(
+                px[0] >= 230 && px[1] < 40 && px[2] < 40 && px[3] == 255,
+                "中央ピクセルが赤面になっていない: {px:?}"
             );
+            // 黒帯部分は黒のまま。
             assert_eq!(&bytes[..4], &[0, 0, 0, 255]);
         }
     });

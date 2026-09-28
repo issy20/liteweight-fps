@@ -134,7 +134,7 @@ impl SceneRenderer {
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("scene"),
             source: wgpu::ShaderSource::Wgsl(
-                include_str!("../../assets/shaders/scene.wgsl").into(),
+                include_str!("../../assets/shaders/scene_wall.wgsl").into(),
             ),
         });
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
