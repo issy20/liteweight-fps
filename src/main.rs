@@ -8,7 +8,7 @@ use liteweight_fps::{
         combat::Combat,
         player::Input,
         time::FixedStep,
-        weapon::{FireInput, Weapon},
+        weapon::{FireInput, Loadout, WeaponKind},
         Player,
     },
     world, Options, Run,
@@ -36,7 +36,7 @@ struct App {
     player: Player,
     colliders: Vec<Aabb>,
     input: Input,
-    weapon: Weapon,
+    weapons: Loadout,
     fire_input: FireInput,
     combat: Combat,
     audio: Option<Audio>,
@@ -49,11 +49,18 @@ struct App {
     error: Option<String>,
 }
 impl App {
-    fn fire(&mut self) {
-        let forward = self.player.aim_direction(self.weapon.recoil);
+    fn switch_weapon(&mut self, kind: WeaponKind) {
+        if self.weapons.switch(kind) {
+            self.fire_input.discard_press();
+        }
+    }
+    fn fire(&mut self, held: bool, pressed: bool) {
+        let kind = self.weapons.active_kind();
+        let forward = self.player.aim_direction(self.weapons.active().recoil);
         let moving = self.player.velocity.length_squared() > 0.01;
-        let spread = self.weapon.spread(moving);
-        if !self.weapon.fire() {
+        let spread = self.weapons.active().spread(moving);
+        let damage = self.weapons.active().data.damage;
+        if !self.weapons.fire(held, pressed) {
             return;
         }
         // 発砲番号から再現可能な円盤内の拡散。反動を加える前の射線を使う。
@@ -67,14 +74,15 @@ impl App {
         let right = forward.cross(glam::Vec3::Y).normalize();
         let up = right.cross(forward);
         let direction = (forward + (right * angle.cos() + up * angle.sin()) * radius).normalize();
-        let shot = self.combat.shoot(
-            self.player.position,
-            direction,
-            &self.colliders,
-            self.weapon.data.damage,
-        );
+        let shot = self
+            .combat
+            .shoot(self.player.position, direction, &self.colliders, damage);
         if let Some(audio) = &self.audio {
-            audio.play(Sound::Fire);
+            audio.play(match kind {
+                WeaponKind::AssaultRifle => Sound::Fire,
+                WeaponKind::Pistol => Sound::Pistol,
+                WeaponKind::Sniper => Sound::Sniper,
+            });
             if shot.killed {
                 audio.play(Sound::Kill);
             } else if shot.headshot {
@@ -130,8 +138,8 @@ impl App {
         if let Some(r) = &self.renderer {
             let (w, h) = r.internal_size();
             let title = format!(
-                "liteweight-fps M3 | {w}×{h} | AR {}/30 | Hits {}/{} | LMB:Fire RMB:ADS R:Reload Esc:Pause",
-                self.weapon.ammo, self.combat.hits, self.combat.shots
+                "liteweight-fps M4 | {w}×{h} | {} {}/{} | Hits {}/{} | 1:Pistol 2:AR 3:Sniper LMB:Fire RMB:ADS R:Reload Esc:Pause",
+                self.weapons.active().kind.label(), self.weapons.active().ammo, self.weapons.active().data.magazine, self.combat.hits, self.combat.shots
             );
             if title != self.title {
                 r.window.set_title(&title);
@@ -151,7 +159,7 @@ impl ApplicationHandler for App {
             return;
         }
         let attributes = Window::default_attributes()
-            .with_title("liteweight-fps M3")
+            .with_title("liteweight-fps M4")
             .with_resizable(self.benchmark.is_none())
             .with_inner_size(LogicalSize::new(960., 540.));
         let window = match event_loop.create_window(attributes) {
@@ -215,8 +223,8 @@ impl ApplicationHandler for App {
         if let winit::event::DeviceEvent::MouseMotion { delta } = event {
             if self.captured && self.benchmark.is_none() {
                 self.player.look(
-                    delta.0 as f32 * 0.002 * (1. - 0.35 * self.weapon.ads),
-                    delta.1 as f32 * 0.002 * (1. - 0.35 * self.weapon.ads),
+                    delta.0 as f32 * 0.002 * (1. - 0.35 * self.weapons.active().ads),
+                    delta.1 as f32 * 0.002 * (1. - 0.35 * self.weapons.active().ads),
                 );
             }
         }
@@ -289,6 +297,15 @@ impl ApplicationHandler for App {
                             }
                         }
                         _ if !self.captured => {}
+                        PhysicalKey::Code(KeyCode::Digit1) if pressed && !event.repeat => {
+                            self.switch_weapon(WeaponKind::Pistol);
+                        }
+                        PhysicalKey::Code(KeyCode::Digit2) if pressed && !event.repeat => {
+                            self.switch_weapon(WeaponKind::AssaultRifle);
+                        }
+                        PhysicalKey::Code(KeyCode::Digit3) if pressed && !event.repeat => {
+                            self.switch_weapon(WeaponKind::Sniper);
+                        }
                         PhysicalKey::Code(KeyCode::KeyR) if pressed && !event.repeat => {
                             self.fire_input.reload = true
                         }
@@ -323,7 +340,9 @@ impl ApplicationHandler for App {
                 let dt = now.duration_since(self.clock).as_secs_f64();
                 self.clock = now;
                 if self.captured && self.benchmark.is_none() {
-                    if std::mem::take(&mut self.fire_input.reload) && self.weapon.reload() {
+                    if std::mem::take(&mut self.fire_input.reload)
+                        && self.weapons.active_mut().reload()
+                    {
                         if let Some(audio) = &self.audio {
                             audio.play(Sound::Reload);
                         }
@@ -334,15 +353,19 @@ impl ApplicationHandler for App {
                         self.input.jump = false;
                         self.player
                             .move_with_collision(&self.colliders, input, 1. / 60.);
-                        self.weapon.advance(1. / 60., self.fire_input.ads);
+                        self.weapons.advance(1. / 60., self.fire_input.ads);
                         self.combat.advance(1. / 60.);
-                        if self.fire_input.take_trigger() {
-                            self.fire();
+                        let (held, pressed) = self.fire_input.take_state();
+                        if held || pressed {
+                            self.fire(held, pressed);
                         }
                     }
                     // 60Hz更新の間でも押下を受け付ける。冷却時間の更新は固定ステップ。
-                    if updates == 0 && self.fire_input.take_trigger() {
-                        self.fire();
+                    if updates == 0 {
+                        let (held, pressed) = self.fire_input.take_state();
+                        if held || pressed {
+                            self.fire(held, pressed);
+                        }
                     }
                 }
                 self.update_title();
@@ -354,12 +377,12 @@ impl ApplicationHandler for App {
                     let aspect = w as f32 / h as f32;
                     r.update_extras(
                         &liteweight_fps::ui::world_mesh(&self.combat),
-                        &liteweight_fps::ui::hud_mesh(&self.weapon, &self.combat, aspect),
+                        &liteweight_fps::ui::hud_mesh(self.weapons.active(), &self.combat, aspect),
                     );
                     self.player.view_matrix_with(
                         aspect,
-                        70. - 20. * self.weapon.ads,
-                        self.weapon.recoil,
+                        self.weapons.fov(),
+                        self.weapons.active().recoil,
                     )
                 };
                 match r.render(matrix) {
@@ -416,7 +439,7 @@ impl ApplicationHandler for App {
                         self.smoke_step += 1;
                         self.update_title();
                     } else {
-                        println!("M3 smoke completed");
+                        println!("M4 smoke completed");
                         self.finish(event_loop, true);
                         return;
                     }
@@ -444,7 +467,7 @@ fn main() {
     let start = Instant::now();
     let args: Vec<_> = std::env::args().skip(1).collect();
     if args == ["--help"] {
-        println!("liteweight-fps M3: 一人称視点のアリーナ。起動直後にマウスを捕捉します。\nWASD:移動 Shift:ダッシュ Space:ジャンプ LMB:射撃 RMB:ADS R:リロード Esc:捕捉解除/解除中は終了 左クリック:再捕捉 Q:終了\n--smoke: 自動リサイズ確認後に終了\n--benchmark [M0と同じ引数]: M0シーンで描画基盤の回帰測定（--mode inputは非対応）");
+        println!("liteweight-fps M4: 一人称視点のアリーナ。起動直後にマウスを捕捉します。\nWASD:移動 Shift:ダッシュ Space:ジャンプ LMB:射撃 RMB:ADS R:リロード Esc:捕捉解除/解除中は終了 左クリック:再捕捉 Q:終了\n--smoke: 自動リサイズ確認後に終了\n--benchmark [M0と同じ引数]: M0シーンで描画基盤の回帰測定（--mode inputは非対応）\n1/2/3:拳銃/AR/スナイパー切替 LMB:射撃 RMB:ADS R:リロード");
         return;
     }
     let smoke = args == ["--smoke"];
@@ -493,7 +516,7 @@ fn main() {
         player: Player::new(),
         colliders: world::arena_colliders(),
         input: Input::default(),
-        weapon: Weapon::default(),
+        weapons: Loadout::default(),
         fire_input: FireInput::default(),
         combat: Combat::default(),
         audio: None,

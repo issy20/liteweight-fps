@@ -9,6 +9,8 @@ pub struct Audio {
 #[derive(Clone, Copy)]
 pub enum Sound {
     Fire,
+    Pistol,
+    Sniper,
     Reload,
     Hit,
     Head,
@@ -19,6 +21,8 @@ impl Audio {
         let (stream, handle) = OutputStream::try_default().map_err(|e| e.to_string())?;
         let sounds = [
             (110., 0.075, 0.7),
+            (240., 0.06, 0.65),
+            (75., 0.18, 0.8),
             (350., 0.13, 0.4),
             (800., 0.05, 0.0),
             (1400., 0.07, 0.0),
