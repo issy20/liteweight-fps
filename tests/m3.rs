@@ -38,15 +38,15 @@ fn reload_blocks_fire_and_only_refills_on_completion() {
 fn ads_interpolates_allows_fire_and_yields_to_reload() {
     let mut w = Weapon::default();
     w.advance(0.09, true);
-    assert!((w.ads - 0.5).abs() < 1e-5);
+    assert!((w.ads_progress - 0.5).abs() < 1e-5);
     assert!(w.fire());
     w.advance(0.09, true);
-    assert!((w.ads - 1.0).abs() < 1e-5);
+    assert!((w.ads_progress - 1.0).abs() < 1e-5);
     w.advance(0.045, false);
-    assert!((w.ads - 0.75).abs() < 1e-5);
+    assert!((w.ads_progress - 0.75).abs() < 1e-5);
     w.reload();
     w.advance(0.18, true);
-    assert_eq!(w.ads, 0.0);
+    assert_eq!(w.ads_progress, 0.0);
 }
 
 #[test]

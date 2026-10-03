@@ -25,7 +25,7 @@ fn nearer_surface_wins_in_both_draw_orders() {
                 for [x, y] in [[-1., -1.], [3., -1.], [-1., 3.]] {
                     vertices.push(Vertex {
                         position: [x, y, z],
-                        color,
+                        color: [color[0], color[1], color[2], 1.0],
                     });
                 }
             }
@@ -101,7 +101,7 @@ fn resized_targets_render_with_matching_depth_and_letterboxed_presentation() {
             vertices: [[-1., -1., 0.2], [3., -1., 0.2], [-1., 3., 0.2]]
                 .map(|position| Vertex {
                     position,
-                    color: [1., 0., 0.],
+                    color: [1., 0., 0., 1.],
                 })
                 .to_vec(),
             indices: vec![0, 1, 2],

@@ -56,24 +56,29 @@ impl App {
     }
     fn fire(&mut self, held: bool, pressed: bool) {
         let kind = self.weapons.active_kind();
-        let forward = self.player.aim_direction(self.weapons.active().recoil);
+        let view_direction = self.player.aim_direction(self.weapons.active().recoil);
+        let forward = self.weapons.active().shot_direction(view_direction);
         let moving = self.player.velocity.length_squared() > 0.01;
         let spread = self.weapons.active().spread(moving);
         let damage = self.weapons.active().data.damage;
         if !self.weapons.fire(held, pressed) {
             return;
         }
-        // 発砲番号から再現可能な円盤内の拡散。反動を加える前の射線を使う。
-        let n = self
-            .combat
-            .shots
-            .wrapping_mul(1664525)
-            .wrapping_add(1013904223);
-        let angle = (n & 65535) as f32 / 65536. * std::f32::consts::TAU;
-        let radius = ((n >> 16) as f32 / 65536.).sqrt() * spread;
-        let right = forward.cross(glam::Vec3::Y).normalize();
-        let up = right.cross(forward);
-        let direction = (forward + (right * angle.cos() + up * angle.sin()) * radius).normalize();
+        let direction = if kind == WeaponKind::Sniper {
+            forward
+        } else {
+            // 発砲番号から再現可能な円盤内の拡散。反動を加える前の射線を使う。
+            let n = self
+                .combat
+                .shots
+                .wrapping_mul(1664525)
+                .wrapping_add(1013904223);
+            let angle = (n & 65535) as f32 / 65536. * std::f32::consts::TAU;
+            let radius = ((n >> 16) as f32 / 65536.).sqrt() * spread;
+            let right = forward.cross(glam::Vec3::Y).normalize();
+            let up = right.cross(forward);
+            (forward + (right * angle.cos() + up * angle.sin()) * radius).normalize()
+        };
         let shot = self
             .combat
             .shoot(self.player.position, direction, &self.colliders, damage);
@@ -223,8 +228,8 @@ impl ApplicationHandler for App {
         if let winit::event::DeviceEvent::MouseMotion { delta } = event {
             if self.captured && self.benchmark.is_none() {
                 self.player.look(
-                    delta.0 as f32 * 0.002 * (1. - 0.35 * self.weapons.active().ads),
-                    delta.1 as f32 * 0.002 * (1. - 0.35 * self.weapons.active().ads),
+                    delta.0 as f32 * 0.002 * (1. - 0.35 * self.weapons.active().ads_progress),
+                    delta.1 as f32 * 0.002 * (1. - 0.35 * self.weapons.active().ads_progress),
                 );
             }
         }
@@ -341,6 +346,7 @@ impl ApplicationHandler for App {
                 self.clock = now;
                 if self.captured && self.benchmark.is_none() {
                     if std::mem::take(&mut self.fire_input.reload)
+                        && !self.weapons.is_switching()
                         && self.weapons.active_mut().reload()
                     {
                         if let Some(audio) = &self.audio {
@@ -375,9 +381,15 @@ impl ApplicationHandler for App {
                     run.matrix(w, h, false)
                 } else {
                     let aspect = w as f32 / h as f32;
+                    let (displayed_weapon, switch_offset) = self.weapons.presentation();
                     r.update_extras(
                         &liteweight_fps::ui::world_mesh(&self.combat),
-                        &liteweight_fps::ui::hud_mesh(self.weapons.active(), &self.combat, aspect),
+                        &liteweight_fps::ui::hud_mesh(
+                            displayed_weapon,
+                            &self.combat,
+                            aspect,
+                            switch_offset,
+                        ),
                     );
                     self.player.view_matrix_with(
                         aspect,

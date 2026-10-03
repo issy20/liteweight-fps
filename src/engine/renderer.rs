@@ -199,7 +199,7 @@ impl SceneRenderer {
                 buffers: &[wgpu::VertexBufferLayout {
                     array_stride: std::mem::size_of::<Vertex>() as u64,
                     step_mode: wgpu::VertexStepMode::Vertex,
-                    attributes: &wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3],
+                    attributes: &wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x4],
                 }],
             },
             fragment: Some(wgpu::FragmentState {
@@ -208,7 +208,7 @@ impl SceneRenderer {
                 compilation_options: Default::default(),
                 targets: &[Some(wgpu::ColorTargetState {
                     format: wgpu::TextureFormat::Rgba8Unorm,
-                    blend: None,
+                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
             }),
@@ -466,7 +466,11 @@ impl DynamicMesh {
                 mapped_at_creation: false,
             })
         };
-        let vertex = buffer("dynamic vertices", 4096 * 24, wgpu::BufferUsages::VERTEX);
+        let vertex = buffer(
+            "dynamic vertices",
+            4096 * std::mem::size_of::<Vertex>() as u64,
+            wgpu::BufferUsages::VERTEX,
+        );
         let index = buffer("dynamic indices", 8192 * 2, wgpu::BufferUsages::INDEX);
         let uniform = buffer("dynamic matrix", 64, wgpu::BufferUsages::UNIFORM);
         let bind = device.create_bind_group(&wgpu::BindGroupDescriptor {

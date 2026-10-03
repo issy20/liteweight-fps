@@ -2,6 +2,25 @@ use glam::Mat4;
 use liteweight_fps::{engine::renderer::SceneRenderer, Scene, Vertex};
 
 fn quad(mesh: &mut Scene, left: f32, right: f32, bottom: f32, top: f32, z: f32, color: [f32; 3]) {
+    quad_rgba(
+        mesh,
+        left,
+        right,
+        bottom,
+        top,
+        z,
+        [color[0], color[1], color[2], 1.0],
+    );
+}
+fn quad_rgba(
+    mesh: &mut Scene,
+    left: f32,
+    right: f32,
+    bottom: f32,
+    top: f32,
+    z: f32,
+    color: [f32; 4],
+) {
     let base = mesh.vertices.len() as u16;
     for (x, y) in [(left, bottom), (right, bottom), (right, top), (left, top)] {
         mesh.vertices.push(Vertex {
@@ -36,6 +55,7 @@ fn targets_respect_world_depth_and_hud_overlays_both() {
         quad(&mut extras, 0., 1., -1., 1., 0.6, [0., 1., 0.]);
         let mut hud = empty();
         quad(&mut hud, -0.2, 0.2, -1., 1., 0.9, [0., 0., 1.]);
+        quad_rgba(&mut hud, -1., 1., -1., 1., 0.9, [0., 0., 0., 0.5]);
         let mut renderer =
             SceneRenderer::new(&device, &world, 32, 32, wgpu::TextureFormat::Rgba8Unorm).unwrap();
         renderer.update_extras(&queue, &extras, &hud);
@@ -78,7 +98,7 @@ fn targets_respect_world_depth_and_hud_overlays_both() {
         let bytes = slice.get_mapped_range();
         for (x, channel) in [(4, 1), (27, 0), (16, 2)] {
             let pixel = &bytes[16 * 256 + x * 4..16 * 256 + x * 4 + 4];
-            assert!(pixel[channel] >= 230, "x={x}: {pixel:?}");
+            assert!((125..=130).contains(&pixel[channel]), "x={x}: {pixel:?}");
             for (c, value) in pixel.iter().take(3).enumerate() {
                 if c != channel {
                     assert_eq!(*value, 0);

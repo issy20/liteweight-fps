@@ -5,7 +5,7 @@ use glam::Vec3;
 #[derive(Clone, Copy, Debug, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct Vertex {
     pub position: [f32; 3],
-    pub color: [f32; 3],
+    pub color: [f32; 4],
 }
 pub struct Scene {
     pub vertices: Vec<Vertex>,
@@ -35,7 +35,7 @@ impl Scene {
             for i in face {
                 self.vertices.push(Vertex {
                     position: (center + Vec3::from(corners[i]) * size * 0.5).to_array(),
-                    color: color.map(|x| x * shade),
+                    color: [color[0] * shade, color[1] * shade, color[2] * shade, 1.0],
                 });
             }
             self.indices
