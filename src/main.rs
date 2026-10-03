@@ -143,8 +143,10 @@ impl App {
         if let Some(r) = &self.renderer {
             let (w, h) = r.internal_size();
             let title = format!(
-                "liteweight-fps M4 | {w}×{h} | {} {}/{} | Hits {}/{} | 1:Pistol 2:AR 3:Sniper LMB:Fire RMB:ADS R:Reload Esc:Pause",
-                self.weapons.active().kind.label(), self.weapons.active().ammo, self.weapons.active().data.magazine, self.combat.hits, self.combat.shots
+                "liteweight-fps M5 | {w}×{h} | {} {}/{} | Bots {}/{} | Kills {} | Hits {}/{} | 1:Pistol 2:AR 3:Sniper LMB:Fire RMB:ADS R:Reload Esc:Pause",
+                self.weapons.active().kind.label(), self.weapons.active().ammo, self.weapons.active().data.magazine,
+                self.combat.targets.iter().filter(|bot| bot.alive).count(), self.combat.targets.len(), self.combat.kills,
+                self.combat.hits, self.combat.shots
             );
             if title != self.title {
                 r.window.set_title(&title);
@@ -164,7 +166,7 @@ impl ApplicationHandler for App {
             return;
         }
         let attributes = Window::default_attributes()
-            .with_title("liteweight-fps M4")
+            .with_title("liteweight-fps M5 Free Training")
             .with_resizable(self.benchmark.is_none())
             .with_inner_size(LogicalSize::new(960., 540.));
         let window = match event_loop.create_window(attributes) {
@@ -360,7 +362,8 @@ impl ApplicationHandler for App {
                         self.player
                             .move_with_collision(&self.colliders, input, 1. / 60.);
                         self.weapons.advance(1. / 60., self.fire_input.ads);
-                        self.combat.advance(1. / 60.);
+                        self.combat
+                            .advance(1. / 60., self.player.position, &self.colliders);
                         let (held, pressed) = self.fire_input.take_state();
                         if held || pressed {
                             self.fire(held, pressed);
@@ -451,7 +454,7 @@ impl ApplicationHandler for App {
                         self.smoke_step += 1;
                         self.update_title();
                     } else {
-                        println!("M4 smoke completed");
+                        println!("M5 smoke completed");
                         self.finish(event_loop, true);
                         return;
                     }
@@ -479,7 +482,7 @@ fn main() {
     let start = Instant::now();
     let args: Vec<_> = std::env::args().skip(1).collect();
     if args == ["--help"] {
-        println!("liteweight-fps M4: 一人称視点のアリーナ。起動直後にマウスを捕捉します。\nWASD:移動 Shift:ダッシュ Space:ジャンプ LMB:射撃 RMB:ADS R:リロード Esc:捕捉解除/解除中は終了 左クリック:再捕捉 Q:終了\n--smoke: 自動リサイズ確認後に終了\n--benchmark [M0と同じ引数]: M0シーンで描画基盤の回帰測定（--mode inputは非対応）\n1/2/3:拳銃/AR/スナイパー切替 LMB:射撃 RMB:ADS R:リロード");
+        println!("liteweight-fps M5 Free Training: 一人称視点のBOT射撃場。起動直後にマウスを捕捉します。\nWASD:移動 Shift:ダッシュ Space:ジャンプ LMB:射撃 RMB:ADS R:リロード Esc:捕捉解除/解除中は終了 左クリック:再捕捉 Q:終了\n--smoke: 自動リサイズ確認後に終了\n--benchmark [M0と同じ引数]: M0シーンで描画基盤の回帰測定（--mode inputは非対応）\n1/2/3:拳銃/AR/スナイパー切替 LMB:射撃 RMB:ADS R:リロード");
         return;
     }
     let smoke = args == ["--smoke"];

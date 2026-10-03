@@ -1,4 +1,4 @@
-//! M4確認用の最小HUD。テクスチャ・フォントの依存は持たない。
+//! 低コストの3Dモデルと最小HUD。テクスチャ・フォントの依存は持たない。
 use crate::{
     simulation::{
         combat::Combat,
@@ -10,26 +10,224 @@ use glam::Vec3;
 
 pub fn world_mesh(combat: &Combat) -> Scene {
     let mut mesh = Scene {
-        vertices: Vec::with_capacity(168),
-        indices: Vec::with_capacity(252),
+        vertices: Vec::with_capacity(combat.targets.len() * BOT_VERTEX_CAPACITY + 24),
+        indices: Vec::with_capacity(combat.targets.len() * BOT_INDEX_CAPACITY + 36),
     };
-    for t in &combat.targets {
-        for (i, b) in t.boxes().iter().enumerate() {
-            let color = if t.flash > 0.0 {
-                [1., 0.95, 0.7]
-            } else if i == 1 {
-                [1., 0.6, 0.2]
-            } else {
-                [0.9, 0.25, 0.12]
-            };
-            mesh.cube((b.min + b.max) * 0.5, b.max - b.min, color);
-        }
+    for t in combat.targets.iter().filter(|target| target.alive) {
+        mannequin(&mut mesh, t.position, t.flash > 0.0);
     }
     if combat.feedback > 0.0 && combat.last_shot.impact {
         mesh.cube(combat.last_shot.position, Vec3::splat(0.09), [1., 0.9, 0.4]);
     }
     mesh
 }
+
+const BOT_VERTEX_CAPACITY: usize = 256;
+const BOT_INDEX_CAPACITY: usize = 960;
+
+fn mannequin(mesh: &mut Scene, position: Vec3, hit_flash: bool) {
+    let color = if hit_flash {
+        [1.0, 0.95, 0.72]
+    } else {
+        [0.74, 0.69, 0.58]
+    };
+
+    // Overlapping low-poly ellipsoids form a simple, continuous human silhouette.
+    ellipsoid(
+        mesh,
+        position + Vec3::new(0.0, 0.78, 0.0),
+        Vec3::new(0.18, 0.16, 0.13),
+        color,
+    );
+    ellipsoid(
+        mesh,
+        position + Vec3::new(0.0, 1.05, 0.0),
+        Vec3::new(0.14, 0.20, 0.12),
+        color,
+    );
+    ellipsoid(
+        mesh,
+        position + Vec3::new(0.0, 1.32, 0.0),
+        Vec3::new(0.23, 0.25, 0.15),
+        color,
+    );
+    ellipsoid(
+        mesh,
+        position + Vec3::new(0.0, 1.59, 0.0),
+        Vec3::new(0.065, 0.12, 0.065),
+        color,
+    );
+    let head = position + Vec3::new(0.0, 1.86, 0.0);
+    ellipsoid(mesh, head, Vec3::new(0.125, 0.17, 0.115), color);
+    forehead_marker(mesh, head, [1.0, 0.48, 0.08]);
+
+    for side in [-1.0, 1.0] {
+        let shoulder = position + Vec3::new(side * 0.18, 1.43, 0.0);
+        let elbow = position + Vec3::new(side * 0.26, 1.05, 0.0);
+        let wrist = position + Vec3::new(side * 0.29, 0.66, 0.015);
+        tapered_limb(mesh, shoulder, elbow, (0.085, 0.085), (0.058, 0.06), color);
+        tapered_limb(mesh, elbow, wrist, (0.058, 0.06), (0.043, 0.045), color);
+        ellipsoid(
+            mesh,
+            position + Vec3::new(side * 0.30, 0.59, 0.02),
+            Vec3::new(0.055, 0.085, 0.05),
+            color,
+        );
+
+        let hip = position + Vec3::new(side * 0.095, 0.79, 0.0);
+        let knee = position + Vec3::new(side * 0.11, 0.39, 0.015);
+        let ankle = position + Vec3::new(side * 0.12, 0.11, 0.015);
+        tapered_limb(mesh, hip, knee, (0.10, 0.12), (0.07, 0.08), color);
+        tapered_limb(mesh, knee, ankle, (0.07, 0.08), (0.05, 0.06), color);
+        ellipsoid(
+            mesh,
+            position + Vec3::new(side * 0.12, 0.055, 0.06),
+            Vec3::new(0.09, 0.055, 0.14),
+            color,
+        );
+    }
+}
+
+const ELLIPSOID_LONGITUDES: usize = 6;
+const ELLIPSOID_LATITUDES: usize = 3;
+const RING_POINTS: [(f32, f32); ELLIPSOID_LONGITUDES] = [
+    (1.0, 0.0),
+    (0.5, 0.866_025_4),
+    (-0.5, 0.866_025_4),
+    (-1.0, 0.0),
+    (-0.5, -0.866_025_4),
+    (0.5, -0.866_025_4),
+];
+
+fn ellipsoid(mesh: &mut Scene, center: Vec3, radii: Vec3, color: [f32; 3]) {
+    let base = mesh.vertices.len() as u16;
+    mesh.vertices.push(Vertex {
+        position: (center - Vec3::Y * radii.y).to_array(),
+        color: [color[0] * 0.9, color[1] * 0.9, color[2] * 0.9, 1.0],
+    });
+    for latitude in 1..ELLIPSOID_LATITUDES {
+        let angle = -std::f32::consts::FRAC_PI_2
+            + std::f32::consts::PI * latitude as f32 / ELLIPSOID_LATITUDES as f32;
+        let ring_radius = angle.cos();
+        let y = angle.sin() * radii.y;
+        for (x, z) in RING_POINTS {
+            let shade = 0.84 + 0.16 * (0.5 + 0.5 * z) * (0.96 + 0.04 * angle.cos());
+            let point = center + Vec3::new(x * ring_radius * radii.x, y, z * ring_radius * radii.z);
+            mesh.vertices.push(Vertex {
+                position: point.to_array(),
+                color: [color[0] * shade, color[1] * shade, color[2] * shade, 1.0],
+            });
+        }
+    }
+    let top = base + (1 + (ELLIPSOID_LATITUDES - 1) * ELLIPSOID_LONGITUDES) as u16;
+    mesh.vertices.push(Vertex {
+        position: (center + Vec3::Y * radii.y).to_array(),
+        color: [color[0] * 0.9, color[1] * 0.9, color[2] * 0.9, 1.0],
+    });
+
+    let first_ring = base + 1;
+    for longitude in 0..ELLIPSOID_LONGITUDES {
+        let next = (longitude + 1) % ELLIPSOID_LONGITUDES;
+        let current = first_ring + longitude as u16;
+        let adjacent = first_ring + next as u16;
+        mesh.indices.extend([base, current, adjacent]);
+    }
+    for latitude in 0..(ELLIPSOID_LATITUDES - 2) {
+        for longitude in 0..ELLIPSOID_LONGITUDES {
+            let next = (longitude + 1) % ELLIPSOID_LONGITUDES;
+            let lower = first_ring + (latitude * ELLIPSOID_LONGITUDES + longitude) as u16;
+            let lower_next = first_ring + (latitude * ELLIPSOID_LONGITUDES + next) as u16;
+            let upper = lower + ELLIPSOID_LONGITUDES as u16;
+            let upper_next = lower_next + ELLIPSOID_LONGITUDES as u16;
+            mesh.indices
+                .extend([lower, lower_next, upper_next, lower, upper_next, upper]);
+        }
+    }
+    let last_ring = first_ring + ((ELLIPSOID_LATITUDES - 2) * ELLIPSOID_LONGITUDES) as u16;
+    for longitude in 0..ELLIPSOID_LONGITUDES {
+        let next = (longitude + 1) % ELLIPSOID_LONGITUDES;
+        mesh.indices
+            .extend([top, last_ring + next as u16, last_ring + longitude as u16]);
+    }
+}
+
+fn tapered_limb(
+    mesh: &mut Scene,
+    start: Vec3,
+    end: Vec3,
+    start_radius: (f32, f32),
+    end_radius: (f32, f32),
+    color: [f32; 3],
+) {
+    let axis = (end - start).normalize_or_zero();
+    let side = axis.cross(Vec3::Z).normalize_or_zero();
+    let side = if side.length_squared() < 0.5 {
+        Vec3::X
+    } else {
+        side
+    };
+    let forward = side.cross(axis).normalize_or_zero();
+    let base = mesh.vertices.len() as u16;
+
+    for (center, (radius_x, radius_z)) in [(start, start_radius), (end, end_radius)] {
+        for (x, z) in RING_POINTS {
+            let point = center + side * (x * radius_x) + forward * (z * radius_z);
+            let shade = 0.88 + 0.12 * (0.5 + 0.5 * z);
+            mesh.vertices.push(Vertex {
+                position: point.to_array(),
+                color: [color[0] * shade, color[1] * shade, color[2] * shade, 1.0],
+            });
+        }
+    }
+
+    for index in 0..ELLIPSOID_LONGITUDES {
+        let next = (index + 1) % ELLIPSOID_LONGITUDES;
+        let start_a = base + index as u16;
+        let start_b = base + next as u16;
+        let end_a = base + (ELLIPSOID_LONGITUDES + index) as u16;
+        let end_b = base + (ELLIPSOID_LONGITUDES + next) as u16;
+        mesh.indices
+            .extend([start_a, start_b, end_b, start_a, end_b, end_a]);
+    }
+}
+
+fn forehead_marker(mesh: &mut Scene, head_center: Vec3, color: [f32; 3]) {
+    const HEAD_RADII: Vec3 = Vec3::new(0.125, 0.17, 0.115);
+    const MARKER_Y: f32 = 0.04;
+    const MARKER_RADIUS_X: f32 = 0.045;
+    const MARKER_RADIUS_Y: f32 = 0.032;
+    let marker_position = |x: f32, y: f32| {
+        let local_y = MARKER_Y + y;
+        let z = HEAD_RADII.z
+            * (1.0 - (x / HEAD_RADII.x).powi(2) - (local_y / HEAD_RADII.y).powi(2)).sqrt()
+            + 0.001;
+        head_center + Vec3::new(x, local_y, z)
+    };
+    let base = mesh.vertices.len() as u16;
+    mesh.vertices.push(Vertex {
+        position: marker_position(0.0, 0.0).to_array(),
+        color: [color[0], color[1], color[2], 1.0],
+    });
+    for (x, y) in [
+        (MARKER_RADIUS_X, 0.0),
+        (MARKER_RADIUS_X * 0.5, MARKER_RADIUS_Y * 0.866_025_4),
+        (-MARKER_RADIUS_X * 0.5, MARKER_RADIUS_Y * 0.866_025_4),
+        (-MARKER_RADIUS_X, 0.0),
+        (-MARKER_RADIUS_X * 0.5, -MARKER_RADIUS_Y * 0.866_025_4),
+        (MARKER_RADIUS_X * 0.5, -MARKER_RADIUS_Y * 0.866_025_4),
+    ] {
+        mesh.vertices.push(Vertex {
+            position: marker_position(x, y).to_array(),
+            color: [color[0], color[1], color[2], 1.0],
+        });
+    }
+    for index in 0..ELLIPSOID_LONGITUDES {
+        let next = (index + 1) % ELLIPSOID_LONGITUDES;
+        mesh.indices
+            .extend([base, base + 1 + index as u16, base + 1 + next as u16]);
+    }
+}
+
 fn rect(mesh: &mut Scene, x: f32, y: f32, w: f32, h: f32, color: [f32; 3], aspect: f32) {
     let base = mesh.vertices.len() as u16;
     for (dx, dy) in [(0., 0.), (w, 0.), (w, h), (0., h)] {

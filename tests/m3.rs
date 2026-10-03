@@ -103,7 +103,8 @@ fn hitscan_stops_at_wall_and_applies_single_target_damage() {
     assert!(shot.headshot);
     assert_eq!(c.targets[0].hp, 25);
     assert!(c.shoot(origin, -Vec3::Z, &[], 25).killed);
-    assert_eq!(c.targets[0].hp, 100); // M3測定用標的は即時リセット
+    assert_eq!(c.targets[0].hp, 0);
+    assert!(!c.targets[0].alive);
 }
 
 #[test]
