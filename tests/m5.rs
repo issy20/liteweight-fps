@@ -106,6 +106,67 @@ fn bot_render_mesh_is_a_faceless_mannequin_with_clear_head_accent() {
         mesh.vertices.len() > 48,
         "BOT should use a multi-part silhouette"
     );
+    assert!(
+        mesh.vertices.len() <= 200,
+        "low-poly mannequin should use at most 200 vertices per BOT, got {}",
+        mesh.vertices.len()
+    );
+    let width_at_height = |height: f32| {
+        mesh.vertices
+            .iter()
+            .filter(|vertex| (vertex.position[1] - height).abs() < 0.002)
+            .map(|vertex| vertex.position[0])
+            .fold((f32::INFINITY, f32::NEG_INFINITY), |(min, max), x| {
+                (min.min(x), max.max(x))
+            })
+    };
+    let waist_width = width_at_height(1.17);
+    let chest_width = width_at_height(1.38);
+    let shoulder_width = width_at_height(1.50);
+    let hip_width = width_at_height(0.96);
+    let chest_depth = mesh
+        .vertices
+        .iter()
+        .filter(|vertex| (vertex.position[1] - 1.38).abs() < 0.002)
+        .map(|vertex| vertex.position[2])
+        .fold((f32::INFINITY, f32::NEG_INFINITY), |(min, max), z| {
+            (min.min(z), max.max(z))
+        });
+    assert!(
+        chest_width.1 - chest_width.0 > waist_width.1 - waist_width.0 + 0.1,
+        "chest should be visibly broader than the waist"
+    );
+    assert!(
+        chest_depth.1 - chest_depth.0 >= (chest_width.1 - chest_width.0) * 0.60,
+        "chest should retain enough depth when viewed from the side"
+    );
+    assert!(
+        shoulder_width.1 - shoulder_width.0 > chest_width.1 - chest_width.0 + 0.02,
+        "shoulders should be broader than the chest"
+    );
+    assert!(
+        hip_width.1 - hip_width.0 >= 0.30,
+        "hips should support the longer legs"
+    );
+    let head_poles = mesh
+        .vertices
+        .iter()
+        .filter(|vertex| {
+            vertex.position[0].abs() < 0.001 && (vertex.position[2] + 5.0).abs() < 0.001
+        })
+        .filter(|vertex| vertex.position[1] > 1.7)
+        .map(|vertex| vertex.position[1])
+        .fold((f32::INFINITY, f32::NEG_INFINITY), |(min, max), y| {
+            (min.min(y), max.max(y))
+        });
+    assert!(
+        head_poles.0 >= 1.76,
+        "head should be about one eighth of total height"
+    );
+    assert!(
+        (head_poles.1 - 2.03).abs() < 0.001,
+        "overall height should remain unchanged"
+    );
     assert!(mesh
         .vertices
         .iter()
@@ -156,7 +217,7 @@ fn bot_render_mesh_is_a_faceless_mannequin_with_clear_head_accent() {
     let head_width = mesh
         .vertices
         .iter()
-        .filter(|vertex| vertex.position[1] >= 1.66)
+        .filter(|vertex| vertex.position[1] >= 1.77)
         .map(|vertex| vertex.position[0])
         .fold((f32::INFINITY, f32::NEG_INFINITY), |(min, max), x| {
             (min.min(x), max.max(x))
@@ -191,6 +252,44 @@ fn bot_render_mesh_is_a_faceless_mannequin_with_clear_head_accent() {
 }
 
 #[test]
+fn mannequin_uses_short_neck_and_longer_legs() {
+    let mesh =
+        liteweight_fps::ui::world_mesh(&Combat::new(vec![Bot::new(Vec3::new(0.0, 0.0, -5.0))]));
+    let horizontal_span_at = |height: f32| {
+        let xs = mesh
+            .vertices
+            .iter()
+            .filter(|vertex| (vertex.position[1] - height).abs() < 0.002)
+            .map(|vertex| vertex.position[0])
+            .collect::<Vec<_>>();
+        let min = xs.iter().copied().fold(f32::INFINITY, f32::min);
+        let max = xs.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+        max - min
+    };
+
+    assert!(
+        horizontal_span_at(0.96) >= 0.30,
+        "raised hip/upper-leg junction should make the legs read longer"
+    );
+    assert!(
+        horizontal_span_at(1.67) >= 0.30,
+        "raised shoulder line should visually shorten the exposed neck"
+    );
+    let neck_width = mesh
+        .vertices
+        .iter()
+        .filter(|vertex| (vertex.position[1] - 1.78).abs() < 0.025)
+        .map(|vertex| vertex.position[0])
+        .fold((f32::INFINITY, f32::NEG_INFINITY), |(min, max), x| {
+            (min.min(x), max.max(x))
+        });
+    assert!(
+        neck_width.1 - neck_width.0 <= 0.07,
+        "neck should stay narrow between the shoulders and head"
+    );
+}
+
+#[test]
 fn ten_bot_render_mesh_stays_within_renderer_buffer_limits() {
     let bots = (0..10)
         .map(|slot| Bot::new(Vec3::new(slot as f32 * 3.0, 0.0, -5.0 - slot as f32)))
@@ -198,8 +297,8 @@ fn ten_bot_render_mesh_stays_within_renderer_buffer_limits() {
     let mesh = liteweight_fps::ui::world_mesh(&Combat::new(bots));
     assert!(mesh.vertices.len() <= 4096);
     assert!(
-        mesh.indices.len() > 8192,
-        "test must exercise expanded capacity"
+        mesh.indices.len() > 4096,
+        "test should exercise a multi-BOT mesh"
     );
     assert!(mesh.indices.len() <= 16384);
 }

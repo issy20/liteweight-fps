@@ -35,64 +35,74 @@ fn mannequin(mesh: &mut Scene, position: Vec3, hit_flash: bool) {
         [0.74, 0.69, 0.58]
     };
 
-    // Overlapping low-poly ellipsoids form a simple, continuous human silhouette.
-    ellipsoid(
-        mesh,
-        position + Vec3::new(0.0, 0.78, 0.0),
-        Vec3::new(0.18, 0.16, 0.13),
-        color,
-    );
-    ellipsoid(
-        mesh,
-        position + Vec3::new(0.0, 1.05, 0.0),
-        Vec3::new(0.14, 0.20, 0.12),
-        color,
-    );
-    ellipsoid(
-        mesh,
-        position + Vec3::new(0.0, 1.32, 0.0),
-        Vec3::new(0.23, 0.25, 0.15),
-        color,
-    );
-    ellipsoid(
-        mesh,
-        position + Vec3::new(0.0, 1.59, 0.0),
-        Vec3::new(0.065, 0.12, 0.065),
-        color,
-    );
-    let head = position + Vec3::new(0.0, 1.86, 0.0);
-    ellipsoid(mesh, head, Vec3::new(0.125, 0.17, 0.115), color);
-    forehead_marker(mesh, head, [1.0, 0.48, 0.08]);
+    // Build the trunk as one shaped surface so the chest, waist, and hips read as anatomy.
+    let torso = [
+        (0.96, 0.16, 0.12),
+        (1.06, 0.19, 0.135),
+        (1.17, 0.14, 0.112),
+        (1.38, 0.21, 0.15),
+        (1.50, 0.24, 0.14),
+        (1.67, 0.16, 0.10),
+    ];
+    loft_torso(mesh, position, &torso, color);
 
     for side in [-1.0, 1.0] {
-        let shoulder = position + Vec3::new(side * 0.18, 1.43, 0.0);
-        let elbow = position + Vec3::new(side * 0.26, 1.05, 0.0);
-        let wrist = position + Vec3::new(side * 0.29, 0.66, 0.015);
-        tapered_limb(mesh, shoulder, elbow, (0.085, 0.085), (0.058, 0.06), color);
-        tapered_limb(mesh, elbow, wrist, (0.058, 0.06), (0.043, 0.045), color);
+        let shoulder = position + Vec3::new(side * 0.20, 1.52, 0.0);
+        let elbow = position + Vec3::new(side * 0.31, 1.19, 0.02);
+        let wrist = position + Vec3::new(side * 0.34, 0.77, 0.04);
+        ringed_limb(
+            mesh,
+            &[
+                (shoulder, 0.078, 0.09),
+                (elbow, 0.056, 0.067),
+                (wrist, 0.041, 0.05),
+            ],
+            color,
+        );
         ellipsoid(
             mesh,
-            position + Vec3::new(side * 0.30, 0.59, 0.02),
-            Vec3::new(0.055, 0.085, 0.05),
+            position + Vec3::new(side * 0.345, 0.72, 0.045),
+            Vec3::new(0.042, 0.065, 0.042),
             color,
         );
 
-        let hip = position + Vec3::new(side * 0.095, 0.79, 0.0);
-        let knee = position + Vec3::new(side * 0.11, 0.39, 0.015);
-        let ankle = position + Vec3::new(side * 0.12, 0.11, 0.015);
-        tapered_limb(mesh, hip, knee, (0.10, 0.12), (0.07, 0.08), color);
-        tapered_limb(mesh, knee, ankle, (0.07, 0.08), (0.05, 0.06), color);
+        let thigh = position + Vec3::new(side * 0.105, 0.96, 0.0);
+        let knee = position + Vec3::new(side * 0.12, 0.50, 0.015);
+        let ankle = position + Vec3::new(side * 0.14, 0.12, 0.015);
+        ringed_limb(
+            mesh,
+            &[
+                (thigh, 0.087, 0.11),
+                (knee, 0.062, 0.075),
+                (ankle, 0.045, 0.052),
+            ],
+            color,
+        );
         ellipsoid(
             mesh,
-            position + Vec3::new(side * 0.12, 0.055, 0.06),
-            Vec3::new(0.09, 0.055, 0.14),
+            position + Vec3::new(side * 0.14, 0.045, 0.085),
+            Vec3::new(0.075, 0.045, 0.17),
             color,
         );
     }
+
+    let neck = position + Vec3::new(0.0, 1.65, 0.0);
+    ringed_limb(
+        mesh,
+        &[
+            (neck, 0.032, 0.032),
+            (position + Vec3::new(0.0, 1.78, 0.0), 0.025, 0.025),
+        ],
+        color,
+    );
+    let head = position + Vec3::new(0.0, 1.90, 0.0);
+    ellipsoid(mesh, head, Vec3::new(0.085, 0.13, 0.082), color);
+    forehead_marker(mesh, head, [1.0, 0.48, 0.08]);
 }
 
 const ELLIPSOID_LONGITUDES: usize = 6;
 const ELLIPSOID_LATITUDES: usize = 3;
+const BODY_SIDES: usize = 6;
 const RING_POINTS: [(f32, f32); ELLIPSOID_LONGITUDES] = [
     (1.0, 0.0),
     (0.5, 0.866_025_4),
@@ -154,27 +164,54 @@ fn ellipsoid(mesh: &mut Scene, center: Vec3, radii: Vec3, color: [f32; 3]) {
     }
 }
 
-fn tapered_limb(
-    mesh: &mut Scene,
-    start: Vec3,
-    end: Vec3,
-    start_radius: (f32, f32),
-    end_radius: (f32, f32),
-    color: [f32; 3],
-) {
-    let axis = (end - start).normalize_or_zero();
-    let side = axis.cross(Vec3::Z).normalize_or_zero();
-    let side = if side.length_squared() < 0.5 {
-        Vec3::X
-    } else {
-        side
-    };
-    let forward = side.cross(axis).normalize_or_zero();
+fn loft_torso(mesh: &mut Scene, position: Vec3, rings: &[(f32, f32, f32)], color: [f32; 3]) {
     let base = mesh.vertices.len() as u16;
-
-    for (center, (radius_x, radius_z)) in [(start, start_radius), (end, end_radius)] {
+    for (y, radius_x, radius_z) in rings.iter().copied() {
         for (x, z) in RING_POINTS {
-            let point = center + side * (x * radius_x) + forward * (z * radius_z);
+            let point = position + Vec3::new(x * radius_x, y, z * radius_z);
+            let shade = 0.86 + 0.14 * (0.5 + 0.5 * z);
+            mesh.vertices.push(Vertex {
+                position: point.to_array(),
+                color: [color[0] * shade, color[1] * shade, color[2] * shade, 1.0],
+            });
+        }
+    }
+    let bottom = mesh.vertices.len() as u16;
+    mesh.vertices.push(Vertex {
+        position: (position + Vec3::new(0.0, rings[0].0, 0.0)).to_array(),
+        color: [color[0] * 0.9, color[1] * 0.9, color[2] * 0.9, 1.0],
+    });
+    let top = mesh.vertices.len() as u16;
+    mesh.vertices.push(Vertex {
+        position: (position + Vec3::new(0.0, rings[rings.len() - 1].0, 0.0)).to_array(),
+        color: [color[0] * 0.9, color[1] * 0.9, color[2] * 0.9, 1.0],
+    });
+    for ring in 0..(rings.len() - 1) {
+        for side in 0..BODY_SIDES {
+            let next = (side + 1) % BODY_SIDES;
+            let lower = base + (ring * BODY_SIDES + side) as u16;
+            let lower_next = base + (ring * BODY_SIDES + next) as u16;
+            let upper = lower + BODY_SIDES as u16;
+            let upper_next = lower_next + BODY_SIDES as u16;
+            mesh.indices
+                .extend([lower, lower_next, upper_next, lower, upper_next, upper]);
+        }
+    }
+    for side in 0..BODY_SIDES {
+        let next = (side + 1) % BODY_SIDES;
+        mesh.indices
+            .extend([bottom, base + next as u16, base + side as u16]);
+        let last_ring = base + ((rings.len() - 1) * BODY_SIDES) as u16;
+        mesh.indices
+            .extend([top, last_ring + side as u16, last_ring + next as u16]);
+    }
+}
+
+fn ringed_limb(mesh: &mut Scene, rings: &[(Vec3, f32, f32)], color: [f32; 3]) {
+    let base = mesh.vertices.len() as u16;
+    for (center, radius_x, radius_z) in rings.iter().copied() {
+        for (x, z) in RING_POINTS {
+            let point = center + Vec3::new(x * radius_x, 0.0, z * radius_z);
             let shade = 0.88 + 0.12 * (0.5 + 0.5 * z);
             mesh.vertices.push(Vertex {
                 position: point.to_array(),
@@ -182,23 +219,24 @@ fn tapered_limb(
             });
         }
     }
-
-    for index in 0..ELLIPSOID_LONGITUDES {
-        let next = (index + 1) % ELLIPSOID_LONGITUDES;
-        let start_a = base + index as u16;
-        let start_b = base + next as u16;
-        let end_a = base + (ELLIPSOID_LONGITUDES + index) as u16;
-        let end_b = base + (ELLIPSOID_LONGITUDES + next) as u16;
-        mesh.indices
-            .extend([start_a, start_b, end_b, start_a, end_b, end_a]);
+    for ring in 0..(rings.len() - 1) {
+        for side in 0..BODY_SIDES {
+            let next = (side + 1) % BODY_SIDES;
+            let lower = base + (ring * BODY_SIDES + side) as u16;
+            let lower_next = base + (ring * BODY_SIDES + next) as u16;
+            let upper = lower + BODY_SIDES as u16;
+            let upper_next = lower_next + BODY_SIDES as u16;
+            mesh.indices
+                .extend([lower, lower_next, upper_next, lower, upper_next, upper]);
+        }
     }
 }
 
 fn forehead_marker(mesh: &mut Scene, head_center: Vec3, color: [f32; 3]) {
-    const HEAD_RADII: Vec3 = Vec3::new(0.125, 0.17, 0.115);
-    const MARKER_Y: f32 = 0.04;
-    const MARKER_RADIUS_X: f32 = 0.045;
-    const MARKER_RADIUS_Y: f32 = 0.032;
+    const HEAD_RADII: Vec3 = Vec3::new(0.085, 0.13, 0.082);
+    const MARKER_Y: f32 = 0.035;
+    const MARKER_RADIUS_X: f32 = 0.032;
+    const MARKER_RADIUS_Y: f32 = 0.023;
     let marker_position = |x: f32, y: f32| {
         let local_y = MARKER_Y + y;
         let z = HEAD_RADII.z
