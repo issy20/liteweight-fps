@@ -26,6 +26,7 @@ fn settings_round_trip_and_partial_files_keep_safe_defaults() {
         ads_sensitivity: 0.5,
         fov: 95.0,
         infinite_ammo: true,
+        fullscreen: true,
         ..GameSettings::default()
     };
     let json = serde_json::to_string(&settings).unwrap();
@@ -38,6 +39,7 @@ fn settings_round_trip_and_partial_files_keep_safe_defaults() {
         GameSettings::default().ads_sensitivity
     );
     assert_eq!(partial.fov, GameSettings::default().fov);
+    assert!(!GameSettings::from_json(r#"{"mouse_sensitivity":1.25}"#).fullscreen);
 }
 
 #[test]
@@ -238,6 +240,8 @@ fn pause_menu_selects_resume_sensitivity_and_exit_actions() {
     menu.move_down();
     assert_eq!(menu.toggle_setting_index(), Some(0));
     menu.move_down();
+    assert_eq!(menu.toggle_setting_index(), Some(1));
+    menu.move_down();
     assert_eq!(menu.setting_index(), Some(5));
     menu.move_down();
     assert_eq!(menu.setting_index(), Some(3));
@@ -253,6 +257,23 @@ fn pause_menu_selects_resume_sensitivity_and_exit_actions() {
     assert_eq!(menu.activate(), Some(PauseMenuAction::Exit));
     menu.move_down();
     assert_eq!(menu.activate(), Some(PauseMenuAction::Resume));
+}
+
+#[test]
+fn fullscreen_setting_is_a_toggle_menu_item_and_is_shown_in_settings() {
+    let mut menu = PauseSelection::default();
+    for _ in 0..5 {
+        menu.move_down();
+    }
+    assert_eq!(menu.toggle_setting_index(), Some(1));
+    assert_eq!(menu.selected_index(), 5);
+
+    let settings = GameSettings {
+        fullscreen: true,
+        ..GameSettings::default()
+    };
+    let text = liteweight_fps::ui::settings_text(&settings, 5, [1280, 720]);
+    assert!(!text.vertices.is_empty());
 }
 
 #[test]

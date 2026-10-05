@@ -50,7 +50,7 @@ pub struct PauseSelection {
 }
 
 impl PauseSelection {
-    const ITEM_COUNT: usize = 12;
+    const ITEM_COUNT: usize = 13;
 
     pub fn selected_index(self) -> usize {
         self.selected
@@ -69,24 +69,28 @@ impl PauseSelection {
             1 => Some(0),
             2 => Some(1),
             3 => Some(2),
-            5 => Some(5),
-            6 => Some(3),
-            7 => Some(4),
-            8 => Some(6),
-            9 => Some(7),
-            10 => Some(8),
+            6 => Some(5),
+            7 => Some(3),
+            8 => Some(4),
+            9 => Some(6),
+            10 => Some(7),
+            11 => Some(8),
             _ => None,
         }
     }
 
     pub fn toggle_setting_index(self) -> Option<usize> {
-        (self.selected == 4).then_some(0)
+        match self.selected {
+            4 => Some(0),
+            5 => Some(1),
+            _ => None,
+        }
     }
 
     pub fn activate(self) -> Option<PauseMenuAction> {
         match self.selected {
             0 => Some(PauseMenuAction::Resume),
-            11 => Some(PauseMenuAction::Exit),
+            12 => Some(PauseMenuAction::Exit),
             _ => None,
         }
     }

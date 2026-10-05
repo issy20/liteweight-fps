@@ -26,7 +26,7 @@ use winit::{
     event::{ElementState, MouseButton, WindowEvent},
     event_loop::{ActiveEventLoop, ControlFlow, EventLoop},
     keyboard::{KeyCode, PhysicalKey},
-    window::{CursorGrabMode, Window, WindowId},
+    window::{CursorGrabMode, Fullscreen, Window, WindowId},
 };
 
 struct App {
@@ -213,6 +213,15 @@ impl App {
             _ => {}
         }
     }
+    fn apply_fullscreen(&mut self) {
+        if let Some(renderer) = &self.renderer {
+            let fullscreen = self
+                .settings
+                .fullscreen
+                .then(|| Fullscreen::Borderless(renderer.window.current_monitor()));
+            renderer.window.set_fullscreen(fullscreen);
+        }
+    }
     fn update_title(&mut self) {
         if let Some(r) = &self.renderer {
             let (w, h) = r.internal_size();
@@ -239,10 +248,13 @@ impl ApplicationHandler for App {
             }
             return;
         }
-        let attributes = Window::default_attributes()
+        let mut attributes = Window::default_attributes()
             .with_title("liteweight-fps M6")
             .with_resizable(self.benchmark.is_none())
             .with_inner_size(LogicalSize::new(960., 540.));
+        if self.benchmark.is_none() && self.settings.fullscreen {
+            attributes = attributes.with_fullscreen(Some(Fullscreen::Borderless(None)));
+        }
         let window = match event_loop.create_window(attributes) {
             Ok(w) => Arc::new(w),
             Err(e) => {
@@ -447,8 +459,18 @@ impl ApplicationHandler for App {
                                 Some(PauseMenuAction::Resume) => self.resume_from_pause(),
                                 Some(PauseMenuAction::Exit) => self.finish(event_loop, false),
                                 None => {
+                                    match self.pause_selection.toggle_setting_index() {
+                                        Some(0) => {
+                                            self.settings.infinite_ammo =
+                                                !self.settings.infinite_ammo
+                                        }
+                                        Some(1) => {
+                                            self.settings.fullscreen = !self.settings.fullscreen;
+                                            self.apply_fullscreen();
+                                        }
+                                        _ => {}
+                                    }
                                     if self.pause_selection.toggle_setting_index().is_some() {
-                                        self.settings.infinite_ammo = !self.settings.infinite_ammo;
                                         if let Err(error) = self.settings.save() {
                                             eprintln!("設定を保存できません: {error}");
                                         }
@@ -495,6 +517,7 @@ impl ApplicationHandler for App {
                             for index in [3, 5, 6, 7, 8] {
                                 self.apply_runtime_setting(index);
                             }
+                            self.apply_fullscreen();
                             if let Err(error) = self.settings.save() {
                                 eprintln!("設定を保存できません: {error}");
                             }

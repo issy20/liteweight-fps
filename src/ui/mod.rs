@@ -294,18 +294,19 @@ pub fn settings_overlay(
 
     // Selection rows map to Resume, gameplay settings, and Quit.
     let rows = [
-        (0.41, 0.12),
-        (0.305, 0.12),
-        (0.20, 0.12),
-        (0.095, 0.12),
-        (-0.01, 0.12),
-        (-0.115, 0.12),
-        (-0.22, 0.12),
-        (-0.325, 0.12),
-        (-0.43, 0.12),
-        (-0.535, 0.12),
-        (-0.64, 0.12),
-        (-0.745, 0.12),
+        (0.43, 0.09),
+        (0.33, 0.09),
+        (0.23, 0.09),
+        (0.13, 0.09),
+        (0.03, 0.09),
+        (-0.07, 0.09),
+        (-0.17, 0.09),
+        (-0.27, 0.09),
+        (-0.37, 0.09),
+        (-0.47, 0.09),
+        (-0.57, 0.09),
+        (-0.67, 0.09),
+        (-0.77, 0.09),
     ];
     for (index, (bottom, height)) in rows.into_iter().enumerate() {
         let selected_row = selected == index;
@@ -338,7 +339,7 @@ pub fn settings_overlay(
     for (setting_index, y, value) in [
         (1, 0.325, settings.mouse_sensitivity / 5.0),
         (2, 0.22, settings.ads_sensitivity),
-        (5, -0.095, settings.volume),
+        (6, -0.185, settings.volume),
     ] {
         let value = value.clamp(0.0, 1.0);
         let color = if selected == setting_index {
@@ -445,7 +446,7 @@ pub fn settings_text_for_context(
     line(
         "MOUSE SENSITIVITY",
         -0.45,
-        0.395,
+        0.38,
         0.023,
         if selected == 1 { active } else { normal },
         false,
@@ -453,7 +454,7 @@ pub fn settings_text_for_context(
     line(
         &format!("{:.2}", settings.mouse_sensitivity),
         0.36,
-        0.395,
+        0.38,
         0.023,
         if selected == 1 { active } else { normal },
         false,
@@ -461,7 +462,7 @@ pub fn settings_text_for_context(
     line(
         "ADS SENSITIVITY",
         -0.45,
-        0.29,
+        0.28,
         0.023,
         if selected == 2 { active } else { normal },
         false,
@@ -469,7 +470,7 @@ pub fn settings_text_for_context(
     line(
         &format!("{:.2}", settings.ads_sensitivity),
         0.36,
-        0.29,
+        0.28,
         0.023,
         if selected == 2 { active } else { normal },
         false,
@@ -477,7 +478,7 @@ pub fn settings_text_for_context(
     line(
         "FIELD OF VIEW",
         -0.45,
-        0.185,
+        0.18,
         0.023,
         if selected == 3 { active } else { normal },
         false,
@@ -485,7 +486,7 @@ pub fn settings_text_for_context(
     line(
         &format!("{:.0} DEG", settings.fov),
         0.36,
-        0.185,
+        0.18,
         0.023,
         if selected == 3 { active } else { normal },
         false,
@@ -507,35 +508,51 @@ pub fn settings_text_for_context(
         false,
     );
     line(
-        "SOUND VOLUME",
+        "FULLSCREEN",
         -0.45,
-        -0.025,
+        -0.02,
         0.023,
         if selected == 5 { active } else { normal },
+        false,
+    );
+    line(
+        if settings.fullscreen { "ON" } else { "OFF" },
+        0.36,
+        -0.02,
+        0.023,
+        if selected == 5 { active } else { normal },
+        false,
+    );
+    line(
+        "SOUND VOLUME",
+        -0.45,
+        -0.12,
+        0.023,
+        if selected == 6 { active } else { normal },
         false,
     );
     line(
         &format!("{:.0}%", settings.volume * 100.0),
         0.36,
-        -0.025,
+        -0.12,
         0.023,
-        if selected == 5 { active } else { normal },
+        if selected == 6 { active } else { normal },
         false,
     );
     line(
         "BOT COUNT",
         -0.45,
-        -0.13,
+        -0.22,
         0.023,
-        if selected == 6 { active } else { normal },
+        if selected == 7 { active } else { normal },
         false,
     );
     line(
         &settings.bot_count.to_string(),
         0.36,
-        -0.13,
+        -0.22,
         0.023,
-        if selected == 6 { active } else { normal },
+        if selected == 7 { active } else { normal },
         false,
     );
     let behavior = match settings.bot_behavior {
@@ -547,73 +564,73 @@ pub fn settings_text_for_context(
     line(
         "BOT BEHAVIOR",
         -0.45,
-        -0.235,
+        -0.32,
         0.023,
-        if selected == 7 { active } else { normal },
+        if selected == 8 { active } else { normal },
         false,
     );
     line(
         behavior,
         0.36,
-        -0.235,
+        -0.32,
         0.023,
-        if selected == 7 { active } else { normal },
+        if selected == 8 { active } else { normal },
         false,
     );
     line(
         "BOT HP",
         -0.45,
-        -0.34,
+        -0.42,
         0.023,
-        if selected == 8 { active } else { normal },
+        if selected == 9 { active } else { normal },
         false,
     );
     line(
         &settings.bot_hp.to_string(),
         0.36,
-        -0.34,
+        -0.42,
         0.023,
-        if selected == 8 { active } else { normal },
+        if selected == 9 { active } else { normal },
         false,
     );
     line(
         "BOT SPEED",
         -0.45,
-        -0.445,
+        -0.52,
         0.023,
-        if selected == 9 { active } else { normal },
+        if selected == 10 { active } else { normal },
         false,
     );
     line(
         &format!("{:.1}x", settings.bot_speed),
         0.36,
-        -0.445,
+        -0.52,
         0.023,
-        if selected == 9 { active } else { normal },
+        if selected == 10 { active } else { normal },
         false,
     );
     line(
         "BOT RESPAWN",
         -0.45,
-        -0.55,
+        -0.62,
         0.023,
-        if selected == 10 { active } else { normal },
+        if selected == 11 { active } else { normal },
         false,
     );
     line(
         &format!("{:.2}s", settings.bot_respawn_seconds),
         0.36,
-        -0.55,
+        -0.62,
         0.023,
-        if selected == 10 { active } else { normal },
+        if selected == 11 { active } else { normal },
         false,
     );
     line(
         "QUIT GAME",
         -0.45,
-        -0.655,
+        -0.72,
         0.028,
-        if selected == 11 {
+        if selected == 12 {
             [1.0, 0.48, 0.38, 1.0]
         } else {
             normal
@@ -1548,7 +1565,7 @@ mod tests {
 
     #[test]
     fn resume_and_quit_highlights_cover_the_full_text_height() {
-        for (selected, expected_min_y, expected_max_y) in [(0, 0.46, 0.50), (11, -0.72, -0.65)] {
+        for (selected, expected_min_y, expected_max_y) in [(0, 0.46, 0.50), (12, -0.76, -0.68)] {
             let mut mesh = crate::Scene {
                 vertices: Vec::new(),
                 indices: Vec::new(),
