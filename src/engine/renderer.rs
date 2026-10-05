@@ -1,4 +1,5 @@
 use super::layout::FrameLayout;
+use super::{text::TextMesh, text_render::TextRenderer};
 use crate::{Scene, Vertex};
 use glam::Mat4;
 use wgpu::util::DeviceExt;
@@ -77,6 +78,7 @@ pub struct SceneRenderer {
     dynamic: DynamicMesh,
     hud: DynamicMesh,
     hud_pipeline: wgpu::RenderPipeline,
+    text: Option<TextRenderer>,
 }
 impl SceneRenderer {
     pub fn new(
@@ -290,6 +292,7 @@ impl SceneRenderer {
             dynamic,
             hud,
             hud_pipeline,
+            text: None,
         })
     }
     fn check_size(device: &wgpu::Device, width: u32, height: u32) -> Result<(), String> {
@@ -372,6 +375,19 @@ impl SceneRenderer {
         self.dynamic.upload(queue, world);
         self.hud.upload(queue, hud);
     }
+    pub fn prepare_text(&mut self, device: &wgpu::Device, queue: &wgpu::Queue) {
+        self.text.get_or_insert_with(|| {
+            TextRenderer::new(device, queue, wgpu::TextureFormat::Rgba8Unorm)
+        });
+    }
+    pub fn update_text(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, text: &TextMesh) {
+        if !text.indices.is_empty() {
+            self.prepare_text(device, queue);
+        }
+        if let Some(renderer) = &mut self.text {
+            renderer.update(queue, text);
+        }
+    }
     pub fn encode_extras(
         &self,
         queue: &wgpu::Queue,
@@ -422,6 +438,9 @@ impl SceneRenderer {
             pass.set_vertex_buffer(0, mesh.vertex.slice(..));
             pass.set_index_buffer(mesh.index.slice(..), wgpu::IndexFormat::Uint16);
             pass.draw_indexed(0..mesh.count, 0, 0..1);
+        }
+        if let Some(text) = &self.text {
+            text.encode(encoder, &self.targets.color_view);
         }
     }
     pub fn encode_present(&self, encoder: &mut wgpu::CommandEncoder, view: &wgpu::TextureView) {

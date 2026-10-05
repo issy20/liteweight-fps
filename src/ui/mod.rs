@@ -1,4 +1,7 @@
 //! 低コストの3Dモデルと最小HUD。テクスチャ・フォントの依存は持たない。
+pub mod menu;
+
+use crate::engine::text::{FontAtlas, TextMesh};
 use crate::{
     simulation::{
         combat::Combat,
@@ -229,16 +232,682 @@ fn forehead_marker(mesh: &mut Scene, head_center: Vec3, color: [f32; 3]) {
 }
 
 fn rect(mesh: &mut Scene, x: f32, y: f32, w: f32, h: f32, color: [f32; 3], aspect: f32) {
+    rect_alpha(
+        mesh,
+        x,
+        y,
+        w,
+        h,
+        [color[0], color[1], color[2], 1.0],
+        aspect,
+    );
+}
+
+fn rect_alpha(mesh: &mut Scene, x: f32, y: f32, w: f32, h: f32, color: [f32; 4], aspect: f32) {
     let base = mesh.vertices.len() as u16;
     for (dx, dy) in [(0., 0.), (w, 0.), (w, h), (0., h)] {
         mesh.vertices.push(Vertex {
             position: [(x + dx) / aspect, y + dy, 0.],
-            color: [color[0], color[1], color[2], 1.0],
+            color,
         });
     }
     mesh.indices
         .extend([base, base + 1, base + 2, base, base + 2, base + 3]);
 }
+
+pub fn settings_overlay(
+    mesh: &mut Scene,
+    settings: &crate::persistence::GameSettings,
+    selected: usize,
+    aspect: f32,
+) {
+    // Fade the live scene so the panel stays readable without hiding the game entirely.
+    rect_alpha(
+        mesh,
+        -aspect,
+        -1.0,
+        2.0 * aspect,
+        2.0,
+        [0.008, 0.012, 0.018, 0.68],
+        aspect,
+    );
+
+    // Centered settings card with a clear edge and warm focus accent.
+    rect_alpha(
+        mesh,
+        -0.61 * aspect,
+        -0.91,
+        1.22 * aspect,
+        1.82,
+        [0.025, 0.036, 0.047, 0.98],
+        aspect,
+    );
+    rect(
+        mesh,
+        -0.61 * aspect,
+        -0.91,
+        0.008 * aspect,
+        1.82,
+        [0.95, 0.53, 0.19],
+        aspect,
+    );
+
+    // Selection rows map to Resume, gameplay settings, and Quit.
+    let rows = [
+        (0.41, 0.12),
+        (0.305, 0.12),
+        (0.20, 0.12),
+        (0.095, 0.12),
+        (-0.01, 0.12),
+        (-0.115, 0.12),
+        (-0.22, 0.12),
+        (-0.325, 0.12),
+        (-0.43, 0.12),
+        (-0.535, 0.12),
+        (-0.64, 0.12),
+        (-0.745, 0.12),
+    ];
+    for (index, (bottom, height)) in rows.into_iter().enumerate() {
+        let selected_row = selected == index;
+        rect_alpha(
+            mesh,
+            -0.53 * aspect,
+            bottom,
+            1.06 * aspect,
+            height,
+            if selected_row {
+                [0.92, 0.48, 0.16, 0.22]
+            } else {
+                [0.55, 0.64, 0.70, 0.045]
+            },
+            aspect,
+        );
+        if selected_row {
+            rect(
+                mesh,
+                -0.53 * aspect,
+                bottom,
+                0.008 * aspect,
+                height,
+                [1.0, 0.62, 0.25],
+                aspect,
+            );
+        }
+    }
+
+    for (setting_index, y, value) in [
+        (1, 0.325, settings.mouse_sensitivity / 5.0),
+        (2, 0.22, settings.ads_sensitivity),
+        (5, -0.095, settings.volume),
+    ] {
+        let value = value.clamp(0.0, 1.0);
+        let color = if selected == setting_index {
+            [1.0, 0.65, 0.24]
+        } else {
+            [0.38, 0.61, 0.68]
+        };
+        rect(
+            mesh,
+            0.0,
+            y,
+            0.28 * aspect,
+            0.009,
+            [0.12, 0.17, 0.20],
+            aspect,
+        );
+        rect(mesh, 0.0, y, 0.28 * aspect * value, 0.009, color, aspect);
+        let knob_x = 0.28 * value;
+        rect(
+            mesh,
+            (knob_x - 0.006) * aspect,
+            y - 0.01,
+            0.012 * aspect,
+            0.029,
+            [0.94, 0.95, 0.92],
+            aspect,
+        );
+    }
+}
+
+pub fn settings_text(
+    settings: &crate::persistence::GameSettings,
+    selected: usize,
+    viewport: [u32; 2],
+) -> TextMesh {
+    settings_text_for_context(settings, selected, viewport, false)
+}
+
+pub fn settings_text_for_context(
+    settings: &crate::persistence::GameSettings,
+    selected: usize,
+    viewport: [u32; 2],
+    from_title: bool,
+) -> TextMesh {
+    let [width, height] = viewport;
+    let font = FontAtlas::shared();
+    let mut mesh = TextMesh::default();
+    let mut line =
+        |text: &str, x_ndc: f32, y_ndc: f32, size: f32, color: [f32; 4], centered: bool| {
+            let font_px = height as f32 * size;
+            let layout = font.layout(text, [0.0, 0.0], font_px, viewport, color);
+            let x_px = if centered {
+                (width as f32 - layout.width_px) * 0.5
+            } else {
+                (x_ndc + 1.0) * width as f32 * 0.5
+            };
+            let positioned = font.layout(
+                text,
+                [x_px, (1.0 - y_ndc) * height as f32 * 0.5],
+                font_px,
+                viewport,
+                color,
+            );
+            let base = mesh.vertices.len() as u16;
+            mesh.vertices.extend(positioned.mesh.vertices);
+            mesh.indices.extend(
+                positioned
+                    .mesh
+                    .indices
+                    .into_iter()
+                    .map(|index| base + index),
+            );
+        };
+    let normal = [0.82, 0.87, 0.89, 1.0];
+    let active = [1.0, 0.65, 0.24, 1.0];
+    line(
+        if from_title { "SETTINGS" } else { "PAUSED" },
+        0.0,
+        0.78,
+        0.07,
+        [0.98, 0.72, 0.39, 1.0],
+        true,
+    );
+    line(
+        if from_title {
+            "GAMEPLAY OPTIONS"
+        } else {
+            "TRAINING PAUSED"
+        },
+        0.0,
+        0.65,
+        0.025,
+        [0.59, 0.68, 0.71, 1.0],
+        true,
+    );
+    line(
+        if from_title { "BACK TO MENU" } else { "RESUME" },
+        -0.45,
+        0.50,
+        0.028,
+        if selected == 0 { active } else { normal },
+        false,
+    );
+    line(
+        "MOUSE SENSITIVITY",
+        -0.45,
+        0.395,
+        0.023,
+        if selected == 1 { active } else { normal },
+        false,
+    );
+    line(
+        &format!("{:.2}", settings.mouse_sensitivity),
+        0.36,
+        0.395,
+        0.023,
+        if selected == 1 { active } else { normal },
+        false,
+    );
+    line(
+        "ADS SENSITIVITY",
+        -0.45,
+        0.29,
+        0.023,
+        if selected == 2 { active } else { normal },
+        false,
+    );
+    line(
+        &format!("{:.2}", settings.ads_sensitivity),
+        0.36,
+        0.29,
+        0.023,
+        if selected == 2 { active } else { normal },
+        false,
+    );
+    line(
+        "FIELD OF VIEW",
+        -0.45,
+        0.185,
+        0.023,
+        if selected == 3 { active } else { normal },
+        false,
+    );
+    line(
+        &format!("{:.0} DEG", settings.fov),
+        0.36,
+        0.185,
+        0.023,
+        if selected == 3 { active } else { normal },
+        false,
+    );
+    line(
+        "INFINITE AMMO",
+        -0.45,
+        0.08,
+        0.023,
+        if selected == 4 { active } else { normal },
+        false,
+    );
+    line(
+        if settings.infinite_ammo { "ON" } else { "OFF" },
+        0.36,
+        0.08,
+        0.023,
+        if selected == 4 { active } else { normal },
+        false,
+    );
+    line(
+        "SOUND VOLUME",
+        -0.45,
+        -0.025,
+        0.023,
+        if selected == 5 { active } else { normal },
+        false,
+    );
+    line(
+        &format!("{:.0}%", settings.volume * 100.0),
+        0.36,
+        -0.025,
+        0.023,
+        if selected == 5 { active } else { normal },
+        false,
+    );
+    line(
+        "BOT COUNT",
+        -0.45,
+        -0.13,
+        0.023,
+        if selected == 6 { active } else { normal },
+        false,
+    );
+    line(
+        &settings.bot_count.to_string(),
+        0.36,
+        -0.13,
+        0.023,
+        if selected == 6 { active } else { normal },
+        false,
+    );
+    let behavior = match settings.bot_behavior {
+        0 => "STATIC",
+        1 => "STRAFE",
+        2 => "CHASE",
+        _ => "MIXED",
+    };
+    line(
+        "BOT BEHAVIOR",
+        -0.45,
+        -0.235,
+        0.023,
+        if selected == 7 { active } else { normal },
+        false,
+    );
+    line(
+        behavior,
+        0.36,
+        -0.235,
+        0.023,
+        if selected == 7 { active } else { normal },
+        false,
+    );
+    line(
+        "BOT HP",
+        -0.45,
+        -0.34,
+        0.023,
+        if selected == 8 { active } else { normal },
+        false,
+    );
+    line(
+        &settings.bot_hp.to_string(),
+        0.36,
+        -0.34,
+        0.023,
+        if selected == 8 { active } else { normal },
+        false,
+    );
+    line(
+        "BOT SPEED",
+        -0.45,
+        -0.445,
+        0.023,
+        if selected == 9 { active } else { normal },
+        false,
+    );
+    line(
+        &format!("{:.1}x", settings.bot_speed),
+        0.36,
+        -0.445,
+        0.023,
+        if selected == 9 { active } else { normal },
+        false,
+    );
+    line(
+        "BOT RESPAWN",
+        -0.45,
+        -0.55,
+        0.023,
+        if selected == 10 { active } else { normal },
+        false,
+    );
+    line(
+        &format!("{:.2}s", settings.bot_respawn_seconds),
+        0.36,
+        -0.55,
+        0.023,
+        if selected == 10 { active } else { normal },
+        false,
+    );
+    line(
+        "QUIT GAME",
+        -0.45,
+        -0.655,
+        0.028,
+        if selected == 11 {
+            [1.0, 0.48, 0.38, 1.0]
+        } else {
+            normal
+        },
+        false,
+    );
+    line(
+        if from_title {
+            "HOME DEFAULTS   ARROWS MOVE   LEFT/RIGHT ADJUST   ENTER SELECT   ESC BACK"
+        } else {
+            "HOME DEFAULTS   ARROWS MOVE   LEFT/RIGHT ADJUST   ENTER SELECT   ESC RESUME"
+        },
+        0.0,
+        -0.86,
+        0.018,
+        [0.67, 0.75, 0.77, 1.0],
+        true,
+    );
+    mesh
+}
+
+pub fn title_overlay(mesh: &mut Scene, selected: usize, aspect: f32) {
+    modal_backdrop(mesh, aspect);
+    rect_alpha(
+        mesh,
+        -0.53 * aspect,
+        -0.78,
+        1.06 * aspect,
+        1.62,
+        [0.025, 0.036, 0.047, 0.98],
+        aspect,
+    );
+    rect(
+        mesh,
+        -0.53 * aspect,
+        -0.78,
+        0.008 * aspect,
+        1.62,
+        [0.95, 0.53, 0.19],
+        aspect,
+    );
+    for (index, (bottom, height)) in [(0.12, 0.19), (-0.13, 0.19), (-0.38, 0.19), (-0.63, 0.19)]
+        .into_iter()
+        .enumerate()
+    {
+        let is_selected = index == selected;
+        rect_alpha(
+            mesh,
+            -0.45 * aspect,
+            bottom,
+            0.90 * aspect,
+            height,
+            if is_selected {
+                [0.92, 0.48, 0.16, 0.22]
+            } else {
+                [0.55, 0.64, 0.70, 0.045]
+            },
+            aspect,
+        );
+        if is_selected {
+            rect(
+                mesh,
+                -0.45 * aspect,
+                bottom,
+                0.008 * aspect,
+                height,
+                [1.0, 0.62, 0.25],
+                aspect,
+            );
+        }
+    }
+}
+
+pub fn title_text(selected: usize, viewport: [u32; 2]) -> TextMesh {
+    let [width, height] = viewport;
+    let font = FontAtlas::shared();
+    let mut mesh = TextMesh::default();
+    let mut line = |text: &str, y_ndc: f32, size: f32, color: [f32; 4]| {
+        let font_px = height as f32 * size;
+        let measured = font.layout(text, [0.0, 0.0], font_px, viewport, color);
+        let x = (width as f32 - measured.width_px) * 0.5;
+        let layout = font.layout(
+            text,
+            [x, (1.0 - y_ndc) * height as f32 * 0.5],
+            font_px,
+            viewport,
+            color,
+        );
+        let base = mesh.vertices.len() as u16;
+        mesh.vertices.extend(layout.mesh.vertices);
+        mesh.indices
+            .extend(layout.mesh.indices.into_iter().map(|index| base + index));
+    };
+    line("LITEWEIGHT FPS", 0.62, 0.075, [0.98, 0.72, 0.39, 1.0]);
+    line(
+        "FULL FPS. MINIMAL GRAPHICS.",
+        0.46,
+        0.029,
+        [0.59, 0.68, 0.71, 1.0],
+    );
+    for (index, (label, y)) in [
+        ("FREE TRAINING", 0.235),
+        ("5-MINUTE CHALLENGE", -0.015),
+        ("SETTINGS", -0.265),
+        ("QUIT GAME", -0.515),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let color = if selected == index {
+            [1.0, 0.65, 0.24, 1.0]
+        } else {
+            [0.82, 0.87, 0.89, 1.0]
+        };
+        line(label, y, 0.047, color);
+    }
+    line(
+        "UP / DOWN MOVE      ENTER SELECT",
+        -0.68,
+        0.027,
+        [0.67, 0.75, 0.77, 1.0],
+    );
+    mesh
+}
+
+pub fn results_overlay(mesh: &mut Scene, aspect: f32) {
+    modal_backdrop(mesh, aspect);
+    rect_alpha(
+        mesh,
+        -0.56 * aspect,
+        -0.83,
+        1.12 * aspect,
+        1.66,
+        [0.025, 0.036, 0.047, 0.98],
+        aspect,
+    );
+    rect(
+        mesh,
+        -0.56 * aspect,
+        -0.83,
+        0.008 * aspect,
+        1.66,
+        [0.95, 0.53, 0.19],
+        aspect,
+    );
+}
+
+fn modal_backdrop(mesh: &mut Scene, aspect: f32) {
+    rect_alpha(
+        mesh,
+        -aspect,
+        -1.0,
+        2.0 * aspect,
+        2.0,
+        [0.008, 0.012, 0.018, 0.68],
+        aspect,
+    );
+}
+
+pub fn results_text(
+    stats: crate::simulation::game_mode::MatchStats,
+    viewport: [u32; 2],
+) -> TextMesh {
+    let [width, height] = viewport;
+    let font = FontAtlas::shared();
+    let mut mesh = TextMesh::default();
+    let mut line = |text: &str, y_ndc: f32, size: f32, color: [f32; 4]| {
+        let font_px = height as f32 * size;
+        let measured = font.layout(text, [0.0, 0.0], font_px, viewport, color);
+        let x = (width as f32 - measured.width_px) * 0.5;
+        let layout = font.layout(
+            text,
+            [x, (1.0 - y_ndc) * height as f32 * 0.5],
+            font_px,
+            viewport,
+            color,
+        );
+        let base = mesh.vertices.len() as u16;
+        mesh.vertices.extend(layout.mesh.vertices);
+        mesh.indices
+            .extend(layout.mesh.indices.into_iter().map(|index| base + index));
+    };
+    let bright = [0.90, 0.93, 0.93, 1.0];
+    let muted = [0.62, 0.71, 0.74, 1.0];
+    line("CHALLENGE COMPLETE", 0.65, 0.065, [0.98, 0.72, 0.39, 1.0]);
+    line(&format!("KILLS  {}", stats.kills), 0.47, 0.043, bright);
+    line(
+        &format!("SHOTS  {}     HITS  {}", stats.shots, stats.hits),
+        0.34,
+        0.036,
+        bright,
+    );
+    line(
+        &format!("ACCURACY  {:.1}%", stats.accuracy() * 100.0),
+        0.22,
+        0.036,
+        bright,
+    );
+    line(
+        &format!(
+            "HEADSHOTS  {}     RATE  {:.1}%",
+            stats.headshots,
+            stats.headshot_rate() * 100.0
+        ),
+        0.10,
+        0.036,
+        bright,
+    );
+    line("WEAPON BREAKDOWN", -0.08, 0.031, [0.98, 0.72, 0.39, 1.0]);
+    for (weapon, label, y) in [
+        (WeaponKind::Pistol, "PISTOL", -0.20),
+        (WeaponKind::AssaultRifle, "ASSAULT RIFLE", -0.30),
+        (WeaponKind::Sniper, "SNIPER", -0.40),
+    ] {
+        let weapon_stats = stats.for_weapon(weapon);
+        line(
+            &format!(
+                "{label}  K {}  H {} / S {}",
+                weapon_stats.kills, weapon_stats.hits, weapon_stats.shots
+            ),
+            y,
+            0.029,
+            muted,
+        );
+    }
+    line("ENTER RETRY      ESC MAIN MENU", -0.65, 0.027, muted);
+    mesh
+}
+
+pub struct GameHudInfo {
+    pub mode: crate::simulation::game_mode::SessionMode,
+    pub remaining: Option<f32>,
+    pub weapon: WeaponKind,
+    pub ammo: u32,
+    pub magazine: u32,
+    pub kills: u32,
+    pub infinite_ammo: bool,
+}
+
+pub fn game_hud_text(info: GameHudInfo, viewport: [u32; 2]) -> TextMesh {
+    let [width, height] = viewport;
+    let font = FontAtlas::shared();
+    let mut mesh = TextMesh::default();
+    let mut line = |text: &str, y_ndc: f32, size: f32, color: [f32; 4]| {
+        let font_px = height as f32 * size;
+        let measured = font.layout(text, [0.0, 0.0], font_px, viewport, color);
+        let x = (width as f32 - measured.width_px) * 0.5;
+        let layout = font.layout(
+            text,
+            [x, (1.0 - y_ndc) * height as f32 * 0.5],
+            font_px,
+            viewport,
+            color,
+        );
+        let base = mesh.vertices.len() as u16;
+        mesh.vertices.extend(layout.mesh.vertices);
+        mesh.indices
+            .extend(layout.mesh.indices.into_iter().map(|index| base + index));
+    };
+    let muted = [0.79, 0.84, 0.84, 1.0];
+    let status = match info.mode {
+        crate::simulation::game_mode::SessionMode::FreeTraining => "FREE TRAINING".to_owned(),
+        crate::simulation::game_mode::SessionMode::FiveMinuteChallenge => {
+            let seconds = info.remaining.unwrap_or(0.0).ceil() as u32;
+            format!("TIME  {:02}:{:02}", seconds / 60, seconds % 60)
+        }
+    };
+    let ammo_text = if info.infinite_ammo {
+        "INF".to_owned()
+    } else {
+        format!("{}/{}", info.ammo, info.magazine)
+    };
+    line(&status, 0.97, 0.034, [0.98, 0.72, 0.39, 1.0]);
+    line(
+        &format!(
+            "{}   AMMO {}   KILLS {}",
+            info.weapon.label(),
+            ammo_text,
+            info.kills
+        ),
+        0.87,
+        0.026,
+        muted,
+    );
+    line("WASD MOVE   SHIFT SPRINT   SPACE JUMP", -0.82, 0.023, muted);
+    line(
+        "LMB FIRE   RMB ADS   R RELOAD   1/2/3 WEAPON   ESC PAUSE",
+        -0.90,
+        0.023,
+        muted,
+    );
+    mesh
+}
+
 fn digit(mesh: &mut Scene, n: u32, x: f32, y: f32, aspect: f32) {
     let masks = [
         0b1111110, 0b0110000, 0b1101101, 0b1111001, 0b0110011, 0b1011011, 0b1011111, 0b1110000,
@@ -411,6 +1080,16 @@ fn scope_picture(mesh: &mut Scene, aspect: f32, progress: f32) {
 }
 
 pub fn hud_mesh(weapon: &Weapon, combat: &Combat, aspect: f32, weapon_y_offset: f32) -> Scene {
+    hud_mesh_with_menu(weapon, combat, aspect, weapon_y_offset, None)
+}
+
+pub fn hud_mesh_with_menu(
+    weapon: &Weapon,
+    combat: &Combat,
+    aspect: f32,
+    weapon_y_offset: f32,
+    menu: Option<(&crate::persistence::GameSettings, usize)>,
+) -> Scene {
     let mut m = Scene {
         vertices: Vec::with_capacity(400),
         indices: Vec::with_capacity(600),
@@ -689,12 +1368,17 @@ pub fn hud_mesh(weapon: &Weapon, combat: &Combat, aspect: f32, weapon_y_offset: 
             aspect,
         );
     }
+    if let Some((settings, selected)) = menu {
+        settings_overlay(&mut m, settings, selected, aspect);
+    }
     m
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{scope_shadow, ScopeVisualState, SCOPE_MAX_RADIUS, SCOPE_SHADOW_SEGMENTS};
+    use super::{
+        scope_shadow, settings_overlay, ScopeVisualState, SCOPE_MAX_RADIUS, SCOPE_SHADOW_SEGMENTS,
+    };
 
     #[test]
     fn scope_view_grows_smoothly_while_eye_alignment_shadow_fades() {
@@ -776,5 +1460,152 @@ mod tests {
         assert!(partial.vertices[0].color[3] > partial.vertices[1].color[3]);
         assert!(partial.vertices[4].color[3] > 0.0);
         assert_eq!(partial.vertices[4].color[3], partial.vertices[5].color[3]);
+    }
+
+    #[test]
+    fn settings_overlay_generates_bounded_finite_hud_geometry() {
+        let combat = crate::simulation::combat::Combat::default();
+        let loadout = crate::simulation::weapon::Loadout::default();
+        let mesh = super::hud_mesh_with_menu(
+            loadout.active(),
+            &combat,
+            16.0 / 9.0,
+            0.0,
+            Some((&crate::persistence::GameSettings::default(), 0)),
+        );
+        assert!(!mesh.indices.is_empty());
+        assert!(mesh.vertices.len() < 4096);
+        assert!(mesh.indices.len() < 8192);
+        assert!(mesh
+            .vertices
+            .iter()
+            .all(|vertex| vertex.position.iter().all(|v| v.is_finite())));
+    }
+
+    #[test]
+    fn pause_overlay_dims_the_game_and_highlights_a_wide_menu_row() {
+        let mut mesh = crate::Scene {
+            vertices: Vec::new(),
+            indices: Vec::new(),
+        };
+        settings_overlay(
+            &mut mesh,
+            &crate::persistence::GameSettings::default(),
+            3,
+            16.0 / 9.0,
+        );
+
+        assert!(mesh.vertices[0].color[3] < 1.0);
+        assert!(mesh.vertices[..4]
+            .iter()
+            .any(|vertex| vertex.position[0] <= -0.99));
+        assert!(mesh.vertices.iter().any(|vertex| {
+            vertex.color[0] > 0.9 && vertex.color[1] > 0.5 && vertex.color[2] < 0.3
+        }));
+        let widest_x = mesh
+            .vertices
+            .iter()
+            .map(|vertex| vertex.position[0].abs())
+            .fold(0.0_f32, f32::max);
+        assert!(widest_x >= 0.6);
+    }
+
+    #[test]
+    fn sensitivity_selection_background_covers_its_label_and_slider() {
+        let mut mesh = crate::Scene {
+            vertices: Vec::new(),
+            indices: Vec::new(),
+        };
+        settings_overlay(
+            &mut mesh,
+            &crate::persistence::GameSettings::default(),
+            1,
+            16.0 / 9.0,
+        );
+
+        let highlighted = mesh
+            .vertices
+            .iter()
+            .filter(|vertex| vertex.color == [0.92, 0.48, 0.16, 0.22])
+            .collect::<Vec<_>>();
+        let min_y = highlighted
+            .iter()
+            .map(|vertex| vertex.position[1])
+            .fold(f32::INFINITY, f32::min);
+        let max_y = highlighted
+            .iter()
+            .map(|vertex| vertex.position[1])
+            .fold(f32::NEG_INFINITY, f32::max);
+        assert!(
+            min_y < 0.34,
+            "selected row must extend below slider: {min_y}"
+        );
+        assert!(
+            max_y > 0.395,
+            "selected row must extend above label: {max_y}"
+        );
+    }
+
+    #[test]
+    fn resume_and_quit_highlights_cover_the_full_text_height() {
+        for (selected, expected_min_y, expected_max_y) in [(0, 0.46, 0.50), (11, -0.72, -0.65)] {
+            let mut mesh = crate::Scene {
+                vertices: Vec::new(),
+                indices: Vec::new(),
+            };
+            settings_overlay(
+                &mut mesh,
+                &crate::persistence::GameSettings::default(),
+                selected,
+                16.0 / 9.0,
+            );
+            let selected_row = mesh
+                .vertices
+                .iter()
+                .filter(|vertex| vertex.color == [0.92, 0.48, 0.16, 0.22])
+                .collect::<Vec<_>>();
+            let min_y = selected_row
+                .iter()
+                .map(|vertex| vertex.position[1])
+                .fold(f32::INFINITY, f32::min);
+            let max_y = selected_row
+                .iter()
+                .map(|vertex| vertex.position[1])
+                .fold(f32::NEG_INFINITY, f32::max);
+            assert!(
+                min_y < expected_min_y,
+                "row {selected} ends too high: {min_y}"
+            );
+            assert!(
+                max_y > expected_max_y,
+                "row {selected} starts too low: {max_y}"
+            );
+        }
+    }
+
+    #[test]
+    fn title_menu_highlights_cover_each_larger_menu_label() {
+        for (selected, text_top, text_height) in [(0, 0.235, 0.047), (3, -0.515, 0.047)] {
+            let mut mesh = crate::Scene {
+                vertices: Vec::new(),
+                indices: Vec::new(),
+            };
+            super::title_overlay(&mut mesh, selected, 16.0 / 9.0);
+            let row = mesh
+                .vertices
+                .iter()
+                .filter(|vertex| vertex.color == [0.92, 0.48, 0.16, 0.22])
+                .collect::<Vec<_>>();
+            let bottom = row
+                .iter()
+                .map(|vertex| vertex.position[1])
+                .fold(f32::INFINITY, f32::min);
+            let top = row
+                .iter()
+                .map(|vertex| vertex.position[1])
+                .fold(f32::NEG_INFINITY, f32::max);
+            assert!(bottom < text_top - text_height * 2.0);
+            assert!(top > text_top);
+        }
     }
 }

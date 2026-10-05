@@ -2,6 +2,8 @@ use glam::Vec3;
 
 pub mod layout;
 pub mod renderer;
+pub mod text;
+pub mod text_render;
 pub mod window;
 
 /// 壁面識別用の細い格子線。シェーダー(scene_wall.wgsl)と同一の計算をRustで再現する。

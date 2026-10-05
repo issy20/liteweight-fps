@@ -5,6 +5,7 @@ edition = "2021"
 default-run = "liteweight-fps"
 
 [dependencies]
+ab_glyph = "0.2"
 bytemuck = { version = "1", features = ["derive"] }
 glam = "0.29"
 miniquad = "0.4.11"

@@ -1,5 +1,8 @@
 use glam::Mat4;
-use liteweight_fps::{engine::renderer::SceneRenderer, Scene, Vertex};
+use liteweight_fps::{
+    engine::{renderer::SceneRenderer, text::FontAtlas},
+    Scene, Vertex,
+};
 use wgpu::util::DeviceExt;
 
 #[test]
@@ -181,5 +184,41 @@ fn resized_targets_render_with_matching_depth_and_letterboxed_presentation() {
             // 黒帯部分は黒のまま。
             assert_eq!(&bytes[..4], &[0, 0, 0, 255]);
         }
+    });
+}
+
+#[test]
+#[ignore = "GPU実機で明示実行: cargo test --test m1_gpu text_atlas_draws -- --ignored"]
+fn text_atlas_draws_into_the_hud_target() {
+    pollster::block_on(async {
+        let instance = wgpu::Instance::new(&Default::default());
+        let adapter = instance
+            .request_adapter(&wgpu::RequestAdapterOptions::default())
+            .await
+            .expect("GPU adapter required");
+        let (device, queue) = adapter
+            .request_device(&wgpu::DeviceDescriptor::default(), None)
+            .await
+            .unwrap();
+        let world = Scene {
+            vertices: [[-1., -1., 0.2], [3., -1., 0.2], [-1., 3., 0.2]]
+                .map(|position| Vertex {
+                    position,
+                    color: [0.1, 0.1, 0.1, 1.0],
+                })
+                .to_vec(),
+            indices: vec![0, 1, 2],
+        };
+        let mut renderer =
+            SceneRenderer::new(&device, &world, 64, 64, wgpu::TextureFormat::Rgba8Unorm).unwrap();
+        let layout = FontAtlas::shared().layout("Readable", [8.0, 8.0], 24.0, [64, 64], [1.0; 4]);
+        assert!(!layout.mesh.indices.is_empty());
+        renderer.prepare_text(&device, &queue);
+        renderer.update_text(&device, &queue, &layout.mesh);
+        let mut encoder = device.create_command_encoder(&Default::default());
+        renderer.encode_scene(&queue, &mut encoder, Mat4::IDENTITY);
+        renderer.encode_extras(&queue, &mut encoder, Mat4::IDENTITY);
+        queue.submit(Some(encoder.finish()));
+        device.poll(wgpu::Maintain::Wait);
     });
 }

@@ -24,6 +24,8 @@ pub struct Bot {
     pub flash: f32,
     pub alive: bool,
     pub behavior: BotBehavior,
+    pub speed_multiplier: f32,
+    pub respawn_seconds: f32,
     pub respawn_remaining: f32,
     spawn_slot: usize,
     ai_accumulator: f32,
@@ -45,6 +47,8 @@ impl Bot {
             flash: 0.0,
             alive: true,
             behavior,
+            speed_multiplier: 1.0,
+            respawn_seconds: BOT_RESPAWN_SECONDS,
             respawn_remaining: 0.0,
             spawn_slot,
             ai_accumulator: 0.0,
@@ -80,7 +84,7 @@ impl Bot {
         self.flash = 0.15;
         if self.hp == 0 {
             self.alive = false;
-            self.respawn_remaining = BOT_RESPAWN_SECONDS;
+            self.respawn_remaining = self.respawn_seconds;
             self.move_direction = Vec3::ZERO;
             true
         } else {
@@ -111,7 +115,7 @@ impl Bot {
             self.ai_accumulator -= BOT_AI_INTERVAL;
             self.think(player_position);
         }
-        let displacement = self.move_direction * dt;
+        let displacement = self.move_direction * (dt * self.speed_multiplier);
         for axis in [0, 2] {
             let mut candidate = self.position;
             candidate[axis] += displacement[axis];

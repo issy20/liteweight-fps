@@ -7,3 +7,4 @@ pub mod bot;
 pub mod weapon;
 
 pub mod combat;
+pub mod game_mode;

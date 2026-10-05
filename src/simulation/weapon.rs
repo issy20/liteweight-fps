@@ -22,12 +22,16 @@ impl WeaponKind {
         }
     }
     pub fn fov(self, ads_progress: f32) -> f32 {
+        self.fov_with_base(70.0, ads_progress)
+    }
+    pub fn fov_with_base(self, base_fov: f32, ads_progress: f32) -> f32 {
         let ads_fov = match self {
             Self::Pistol => 55.,
             Self::AssaultRifle => 50.,
             Self::Sniper => 32.,
         };
-        70. + (ads_fov - 70.) * ads_progress
+        let progress = ads_progress.clamp(0.0, 1.0);
+        base_fov + (ads_fov - base_fov) * progress
     }
 }
 
@@ -283,18 +287,38 @@ impl Loadout {
         (self.active(), 0.0)
     }
     pub fn fire(&mut self, held: bool, pressed: bool) -> bool {
+        self.fire_with_infinite_ammo(held, pressed, false)
+    }
+    pub fn fire_with_infinite_ammo(
+        &mut self,
+        held: bool,
+        pressed: bool,
+        infinite_ammo: bool,
+    ) -> bool {
         if self.is_switching() {
             return false;
         }
         let weapon = self.active_mut();
+        if infinite_ammo {
+            weapon.ammo = weapon.data.magazine;
+        }
         let accepts = match weapon.data.mode {
             FireMode::Automatic => held || pressed,
             FireMode::SemiAutomatic | FireMode::BoltAction => pressed,
         };
-        accepts && weapon.fire()
+        let fired = accepts && weapon.fire();
+        if infinite_ammo {
+            weapon.ammo = weapon.data.magazine;
+        }
+        fired
     }
     pub fn fov(&self) -> f32 {
         self.active().kind.fov(self.active().ads_progress)
+    }
+    pub fn fov_with_base(&self, base_fov: f32) -> f32 {
+        self.active()
+            .kind
+            .fov_with_base(base_fov, self.active().ads_progress)
     }
 }
 

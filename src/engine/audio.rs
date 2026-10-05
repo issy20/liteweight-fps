@@ -1,10 +1,11 @@
 //! オリジナル合成効果音。圧縮音声デコーダや外部アセットは使用しない。
-use rodio::{buffer::SamplesBuffer, OutputStream, OutputStreamHandle};
+use rodio::{buffer::SamplesBuffer, OutputStream, OutputStreamHandle, Source};
 
 pub struct Audio {
     _stream: OutputStream,
     handle: OutputStreamHandle,
     sounds: Vec<SamplesBuffer<f32>>,
+    volume: f32,
 }
 #[derive(Clone, Copy)]
 pub enum Sound {
@@ -49,10 +50,21 @@ impl Audio {
             _stream: stream,
             handle,
             sounds,
+            volume: 1.0,
         })
     }
+    pub fn set_volume(&mut self, volume: f32) {
+        self.volume = if volume.is_finite() {
+            volume.clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
+    }
     pub fn play(&self, sound: Sound) {
-        if let Err(e) = self.handle.play_raw(self.sounds[sound as usize].clone()) {
+        if let Err(e) = self
+            .handle
+            .play_raw(self.sounds[sound as usize].clone().amplify(self.volume))
+        {
             eprintln!("audio playback: {e}");
         }
     }

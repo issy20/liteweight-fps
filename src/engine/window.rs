@@ -121,6 +121,12 @@ impl WindowRenderer {
     pub fn update_extras(&mut self, world: &Scene, hud: &Scene) {
         self.scene.update_extras(&self.queue, world, hud);
     }
+    pub fn update_text(&mut self, text: &super::text::TextMesh) {
+        self.scene.update_text(&self.device, &self.queue, text);
+    }
+    pub fn prepare_text(&mut self) {
+        self.scene.prepare_text(&self.device, &self.queue);
+    }
     pub fn render(&mut self, matrix: Mat4) -> Result<bool, wgpu::SurfaceError> {
         if !self.drawable {
             return Ok(false);

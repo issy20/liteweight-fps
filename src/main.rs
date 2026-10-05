@@ -1,3 +1,5 @@
+use liteweight_fps::persistence::GameSettings;
+use liteweight_fps::ui::menu::{PauseMenuAction, PauseSelection, TitleMenuAction, TitleSelection};
 use liteweight_fps::{
     engine::{
         audio::{Audio, Sound},
@@ -6,6 +8,7 @@ use liteweight_fps::{
     physics::Aabb,
     simulation::{
         combat::Combat,
+        game_mode::{SessionMode, TrainingSession},
         player::Input,
         time::FixedStep,
         weapon::{FireInput, Loadout, WeaponKind},
@@ -39,6 +42,14 @@ struct App {
     weapons: Loadout,
     fire_input: FireInput,
     combat: Combat,
+    settings: GameSettings,
+    session: TrainingSession,
+    title_screen: bool,
+    settings_menu: bool,
+    settings_from_title: bool,
+    results_screen: bool,
+    title_selection: TitleSelection,
+    pause_selection: PauseSelection,
     audio: Option<Audio>,
     title: String,
     capture_requested: bool,
@@ -61,7 +72,10 @@ impl App {
         let moving = self.player.velocity.length_squared() > 0.01;
         let spread = self.weapons.active().spread(moving);
         let damage = self.weapons.active().data.damage;
-        if !self.weapons.fire(held, pressed) {
+        if !self
+            .weapons
+            .fire_with_infinite_ammo(held, pressed, self.infinite_ammo_active())
+        {
             return;
         }
         let direction = if kind == WeaponKind::Sniper {
@@ -82,6 +96,8 @@ impl App {
         let shot = self
             .combat
             .shoot(self.player.position, direction, &self.colliders, damage);
+        self.session
+            .record_shot(kind, shot.hit, shot.headshot, shot.killed);
         if let Some(audio) = &self.audio {
             audio.play(match kind {
                 WeaponKind::AssaultRifle => Sound::Fire,
@@ -139,11 +155,69 @@ impl App {
         self.fixed = FixedStep::new(60, 5);
         self.clock = Instant::now();
     }
+    fn resume_from_pause(&mut self) {
+        if let Err(error) = self.settings.save() {
+            eprintln!("設定を保存できません: {error}");
+        }
+        self.settings_menu = false;
+        if self.settings_from_title {
+            self.settings_from_title = false;
+            self.title_screen = true;
+            self.capture_requested = false;
+            self.release_capture();
+            return;
+        }
+        self.capture_requested = true;
+        self.try_capture();
+    }
+    fn begin_session(&mut self, mode: SessionMode) {
+        self.player = Player::new();
+        self.weapons = Loadout::default();
+        self.fire_input = FireInput::default();
+        self.combat = Combat::default();
+        self.combat.configure_bots_with(
+            self.settings.bot_count,
+            self.settings.bot_behavior,
+            self.settings.bot_hp,
+            self.settings.bot_speed,
+            self.settings.bot_respawn_seconds,
+        );
+        self.session = TrainingSession::new(mode);
+        self.title_screen = false;
+        self.settings_menu = false;
+        self.settings_from_title = false;
+        self.results_screen = false;
+        self.capture_requested = true;
+        self.try_capture();
+        self.clock = Instant::now();
+    }
+    fn infinite_ammo_active(&self) -> bool {
+        self.session
+            .mode()
+            .infinite_ammo_enabled(self.settings.infinite_ammo)
+    }
+    fn apply_runtime_setting(&mut self, setting: usize) {
+        match setting {
+            3 | 4 | 6 | 7 | 8 => self.combat.configure_bots_with(
+                self.settings.bot_count,
+                self.settings.bot_behavior,
+                self.settings.bot_hp,
+                self.settings.bot_speed,
+                self.settings.bot_respawn_seconds,
+            ),
+            5 => {
+                if let Some(audio) = &mut self.audio {
+                    audio.set_volume(self.settings.volume);
+                }
+            }
+            _ => {}
+        }
+    }
     fn update_title(&mut self) {
         if let Some(r) = &self.renderer {
             let (w, h) = r.internal_size();
             let title = format!(
-                "liteweight-fps M5 | {w}×{h} | {} {}/{} | Bots {}/{} | Kills {} | Hits {}/{} | 1:Pistol 2:AR 3:Sniper LMB:Fire RMB:ADS R:Reload Esc:Pause",
+                "liteweight-fps M6 | {w}×{h} | {} {}/{} | Bots {}/{} | Kills {} | Hits {}/{} | 1:Pistol 2:AR 3:Sniper LMB:Fire RMB:ADS R:Reload Esc:Settings",
                 self.weapons.active().kind.label(), self.weapons.active().ammo, self.weapons.active().data.magazine,
                 self.combat.targets.iter().filter(|bot| bot.alive).count(), self.combat.targets.len(), self.combat.kills,
                 self.combat.hits, self.combat.shots
@@ -166,7 +240,7 @@ impl ApplicationHandler for App {
             return;
         }
         let attributes = Window::default_attributes()
-            .with_title("liteweight-fps M5 Free Training")
+            .with_title("liteweight-fps M6")
             .with_resizable(self.benchmark.is_none())
             .with_inner_size(LogicalSize::new(960., 540.));
         let window = match event_loop.create_window(attributes) {
@@ -186,7 +260,7 @@ impl ApplicationHandler for App {
             (world::arena(), (1280, 720), true)
         };
         match pollster::block_on(WindowRenderer::new(window, &mesh, internal, vsync)) {
-            Ok(r) => {
+            Ok(mut r) => {
                 println!("{}; {}", r.adapter_info, r.presentation_info);
                 if let Some(run) = &mut self.benchmark {
                     run.backend = r.adapter_info.clone();
@@ -196,16 +270,24 @@ impl ApplicationHandler for App {
                     let size = r.window.inner_size();
                     run.set_initial_display(size.width, size.height);
                 }
+                if self.benchmark.is_none() {
+                    r.prepare_text();
+                }
                 self.renderer = Some(r);
                 if self.benchmark.is_none() {
                     match Audio::new() {
-                        Ok(audio) => self.audio = Some(audio),
+                        Ok(mut audio) => {
+                            audio.set_volume(self.settings.volume);
+                            self.audio = Some(audio);
+                        }
                         Err(e) => eprintln!("音声なしで続行: {e}"),
                     }
                 }
                 self.smoke_started = Some(Instant::now());
-                self.capture_requested = true;
-                self.try_capture();
+                if self.benchmark.is_some() {
+                    self.capture_requested = true;
+                    self.try_capture();
+                }
                 self.update_title();
             }
             Err(e) => self.fail(event_loop, e),
@@ -230,8 +312,16 @@ impl ApplicationHandler for App {
         if let winit::event::DeviceEvent::MouseMotion { delta } = event {
             if self.captured && self.benchmark.is_none() {
                 self.player.look(
-                    delta.0 as f32 * 0.002 * (1. - 0.35 * self.weapons.active().ads_progress),
-                    delta.1 as f32 * 0.002 * (1. - 0.35 * self.weapons.active().ads_progress),
+                    delta.0 as f32
+                        * 0.002
+                        * self
+                            .settings
+                            .look_multiplier(self.weapons.active().ads_progress),
+                    delta.1 as f32
+                        * 0.002
+                        * self
+                            .settings
+                            .look_multiplier(self.weapons.active().ads_progress),
                 );
             }
         }
@@ -278,7 +368,7 @@ impl ApplicationHandler for App {
             WindowEvent::MouseInput { state, button, .. } if self.benchmark.is_none() => {
                 let pressed = state == ElementState::Pressed;
                 if !self.captured {
-                    if pressed && button == MouseButton::Left {
+                    if !self.settings_menu && pressed && button == MouseButton::Left {
                         self.capture_requested = true;
                         self.try_capture();
                         self.clock = Instant::now();
@@ -295,12 +385,118 @@ impl ApplicationHandler for App {
                 let pressed = event.state == ElementState::Pressed;
                 if self.benchmark.is_none() {
                     match event.physical_key {
+                        PhysicalKey::Code(KeyCode::ArrowUp)
+                            if pressed && !event.repeat && self.title_screen =>
+                        {
+                            self.title_selection.move_up();
+                        }
+                        PhysicalKey::Code(KeyCode::ArrowDown)
+                            if pressed && !event.repeat && self.title_screen =>
+                        {
+                            self.title_selection.move_down();
+                        }
+                        PhysicalKey::Code(KeyCode::Enter)
+                            if pressed && !event.repeat && self.title_screen =>
+                        {
+                            match self.title_selection.activate() {
+                                TitleMenuAction::FreeTraining => {
+                                    self.begin_session(SessionMode::FreeTraining)
+                                }
+                                TitleMenuAction::FiveMinuteChallenge => {
+                                    self.begin_session(SessionMode::FiveMinuteChallenge)
+                                }
+                                TitleMenuAction::Settings => {
+                                    self.title_screen = false;
+                                    self.settings_menu = true;
+                                    self.settings_from_title = true;
+                                    self.pause_selection = PauseSelection::default();
+                                    self.capture_requested = false;
+                                }
+                                TitleMenuAction::Quit => self.finish(event_loop, false),
+                            }
+                        }
+                        PhysicalKey::Code(KeyCode::Escape)
+                            if pressed && !event.repeat && self.results_screen =>
+                        {
+                            self.results_screen = false;
+                            self.title_screen = true;
+                            self.title_selection = TitleSelection::default();
+                        }
+                        PhysicalKey::Code(KeyCode::Enter)
+                            if pressed && !event.repeat && self.results_screen =>
+                        {
+                            self.begin_session(self.session.mode());
+                        }
                         PhysicalKey::Code(KeyCode::Escape) if pressed && !event.repeat => {
-                            if self.captured {
+                            if self.settings_menu {
+                                self.resume_from_pause();
+                            } else {
                                 self.capture_requested = false;
                                 self.release_capture();
-                            } else {
-                                self.finish(event_loop, false);
+                                if !self.title_screen && !self.results_screen {
+                                    self.pause_selection = PauseSelection::default();
+                                    self.settings_from_title = false;
+                                    self.settings_menu = true;
+                                }
+                            }
+                        }
+                        PhysicalKey::Code(KeyCode::Enter)
+                            if pressed && !event.repeat && self.settings_menu =>
+                        {
+                            match self.pause_selection.activate() {
+                                Some(PauseMenuAction::Resume) => self.resume_from_pause(),
+                                Some(PauseMenuAction::Exit) => self.finish(event_loop, false),
+                                None => {
+                                    if self.pause_selection.toggle_setting_index().is_some() {
+                                        self.settings.infinite_ammo = !self.settings.infinite_ammo;
+                                        if let Err(error) = self.settings.save() {
+                                            eprintln!("設定を保存できません: {error}");
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        PhysicalKey::Code(KeyCode::ArrowUp)
+                            if pressed && !event.repeat && self.settings_menu =>
+                        {
+                            self.pause_selection.move_up();
+                        }
+                        PhysicalKey::Code(KeyCode::ArrowDown)
+                            if pressed && !event.repeat && self.settings_menu =>
+                        {
+                            self.pause_selection.move_down();
+                        }
+                        PhysicalKey::Code(KeyCode::ArrowLeft)
+                            if pressed && !event.repeat && self.settings_menu =>
+                        {
+                            if let Some(index) = self.pause_selection.setting_index() {
+                                self.settings.adjust_setting(index, -1.0);
+                                self.apply_runtime_setting(index);
+                                if let Err(error) = self.settings.save() {
+                                    eprintln!("設定を保存できません: {error}");
+                                }
+                            }
+                        }
+                        PhysicalKey::Code(KeyCode::ArrowRight)
+                            if pressed && !event.repeat && self.settings_menu =>
+                        {
+                            if let Some(index) = self.pause_selection.setting_index() {
+                                self.settings.adjust_setting(index, 1.0);
+                                self.apply_runtime_setting(index);
+                                if let Err(error) = self.settings.save() {
+                                    eprintln!("設定を保存できません: {error}");
+                                }
+                            }
+                        }
+                        PhysicalKey::Code(KeyCode::Home)
+                            if pressed && !event.repeat && self.settings_menu =>
+                        {
+                            self.settings = GameSettings::default();
+                            for index in [3, 5, 6, 7, 8] {
+                                self.apply_runtime_setting(index);
+                            }
+                            if let Err(error) = self.settings.save() {
+                                eprintln!("設定を保存できません: {error}");
                             }
                         }
                         _ if !self.captured => {}
@@ -314,7 +510,9 @@ impl ApplicationHandler for App {
                             self.switch_weapon(WeaponKind::Sniper);
                         }
                         PhysicalKey::Code(KeyCode::KeyR) if pressed && !event.repeat => {
-                            self.fire_input.reload = true
+                            if !self.infinite_ammo_active() {
+                                self.fire_input.reload = true;
+                            }
                         }
                         PhysicalKey::Code(KeyCode::KeyA) => self.input.left = pressed,
                         PhysicalKey::Code(KeyCode::KeyD) => self.input.right = pressed,
@@ -348,6 +546,7 @@ impl ApplicationHandler for App {
                 self.clock = now;
                 if self.captured && self.benchmark.is_none() {
                     if std::mem::take(&mut self.fire_input.reload)
+                        && !self.infinite_ammo_active()
                         && !self.weapons.is_switching()
                         && self.weapons.active_mut().reload()
                     {
@@ -368,6 +567,17 @@ impl ApplicationHandler for App {
                         if held || pressed {
                             self.fire(held, pressed);
                         }
+                        if self.session.advance(1.0 / 60.0) {
+                            if let Err(error) =
+                                liteweight_fps::persistence::save_result(self.session.stats())
+                            {
+                                eprintln!("結果を保存できません: {error}");
+                            }
+                            self.results_screen = true;
+                            self.capture_requested = false;
+                            self.release_capture();
+                            break;
+                        }
                     }
                     // 60Hz更新の間でも押下を受け付ける。冷却時間の更新は固定ステップ。
                     if updates == 0 {
@@ -378,6 +588,7 @@ impl ApplicationHandler for App {
                     }
                 }
                 self.update_title();
+                let infinite_ammo_active = self.infinite_ammo_active();
                 let r = self.renderer.as_mut().unwrap();
                 let (w, h) = r.internal_size();
                 let matrix = if let Some(run) = &self.benchmark {
@@ -385,18 +596,56 @@ impl ApplicationHandler for App {
                 } else {
                     let aspect = w as f32 / h as f32;
                     let (displayed_weapon, switch_offset) = self.weapons.presentation();
-                    r.update_extras(
-                        &liteweight_fps::ui::world_mesh(&self.combat),
-                        &liteweight_fps::ui::hud_mesh(
-                            displayed_weapon,
-                            &self.combat,
-                            aspect,
-                            switch_offset,
-                        ),
+                    let mut hud = liteweight_fps::ui::hud_mesh_with_menu(
+                        displayed_weapon,
+                        &self.combat,
+                        aspect,
+                        switch_offset,
+                        self.settings_menu
+                            .then_some((&self.settings, self.pause_selection.selected_index())),
                     );
+                    if self.title_screen {
+                        liteweight_fps::ui::title_overlay(
+                            &mut hud,
+                            self.title_selection.selected_index(),
+                            aspect,
+                        );
+                    } else if self.results_screen {
+                        liteweight_fps::ui::results_overlay(&mut hud, aspect);
+                    }
+                    r.update_extras(&liteweight_fps::ui::world_mesh(&self.combat), &hud);
+                    let text = if self.title_screen {
+                        liteweight_fps::ui::title_text(
+                            self.title_selection.selected_index(),
+                            [w, h],
+                        )
+                    } else if self.results_screen {
+                        liteweight_fps::ui::results_text(self.session.stats(), [w, h])
+                    } else if self.settings_menu {
+                        liteweight_fps::ui::settings_text_for_context(
+                            &self.settings,
+                            self.pause_selection.selected_index(),
+                            [w, h],
+                            self.settings_from_title,
+                        )
+                    } else {
+                        liteweight_fps::ui::game_hud_text(
+                            liteweight_fps::ui::GameHudInfo {
+                                mode: self.session.mode(),
+                                remaining: self.session.remaining_seconds(),
+                                weapon: self.weapons.active_kind(),
+                                ammo: self.weapons.active().ammo,
+                                magazine: self.weapons.active().data.magazine,
+                                kills: self.combat.kills,
+                                infinite_ammo: infinite_ammo_active,
+                            },
+                            [w, h],
+                        )
+                    };
+                    r.update_text(&text);
                     self.player.view_matrix_with(
                         aspect,
-                        self.weapons.fov(),
+                        self.weapons.fov_with_base(self.settings.fov),
                         self.weapons.active().recoil,
                     )
                 };
@@ -482,7 +731,7 @@ fn main() {
     let start = Instant::now();
     let args: Vec<_> = std::env::args().skip(1).collect();
     if args == ["--help"] {
-        println!("liteweight-fps M5 Free Training: 一人称視点のBOT射撃場。起動直後にマウスを捕捉します。\nWASD:移動 Shift:ダッシュ Space:ジャンプ LMB:射撃 RMB:ADS R:リロード Esc:捕捉解除/解除中は終了 左クリック:再捕捉 Q:終了\n--smoke: 自動リサイズ確認後に終了\n--benchmark [M0と同じ引数]: M0シーンで描画基盤の回帰測定（--mode inputは非対応）\n1/2/3:拳銃/AR/スナイパー切替 LMB:射撃 RMB:ADS R:リロード");
+        println!("liteweight-fps M6: タイトル画面でFree Trainingまたは5-Minute Challengeを選択。\nWASD:移動 Shift:ダッシュ Space:ジャンプ LMB:射撃 RMB:ADS R:リロード Esc:ポーズ Q:終了\n--smoke: 自動リサイズ確認後に終了\n--benchmark [M0と同じ引数]: M0シーンで描画基盤の回帰測定（--mode inputは非対応）\n1/2/3:拳銃/AR/スナイパー切替 LMB:射撃 RMB:ADS R:リロード");
         return;
     }
     let smoke = args == ["--smoke"];
@@ -521,6 +770,7 @@ fn main() {
         }
     }
     let event_loop = builder.build().expect("event loop");
+    let title_screen = !smoke && options.is_none();
     let mut app = App {
         renderer: None,
         benchmark: options.map(|o| Run::new(o, start, String::new())),
@@ -534,6 +784,14 @@ fn main() {
         weapons: Loadout::default(),
         fire_input: FireInput::default(),
         combat: Combat::default(),
+        settings: GameSettings::load(),
+        session: TrainingSession::new(SessionMode::FreeTraining),
+        title_screen,
+        settings_menu: false,
+        settings_from_title: false,
+        results_screen: false,
+        title_selection: TitleSelection::default(),
+        pause_selection: PauseSelection::default(),
         audio: None,
         title: String::new(),
         capture_requested: false,

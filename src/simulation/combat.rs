@@ -68,6 +68,58 @@ impl Combat {
         }
     }
 
+    pub fn configure_bots(&mut self, count: u32, behavior_setting: u8) {
+        self.configure_bots_with(count, behavior_setting, 100, 1.0, BOT_RESPAWN_SECONDS);
+    }
+
+    pub fn configure_bots_with(
+        &mut self,
+        count: u32,
+        behavior_setting: u8,
+        hp: u32,
+        speed_multiplier: f32,
+        respawn_seconds: f32,
+    ) {
+        const INITIAL_POSITIONS: [Vec3; 5] = [
+            Vec3::new(0.0, 0.0, -6.0),
+            Vec3::new(-7.0, 0.0, -11.0),
+            Vec3::new(7.0, 0.0, -14.0),
+            Vec3::new(-18.0, 0.0, 14.0),
+            Vec3::new(18.0, 0.0, 14.0),
+        ];
+        let mixed = [
+            BotBehavior::Static,
+            BotBehavior::Strafe,
+            BotBehavior::Chase,
+            BotBehavior::Strafe,
+            BotBehavior::Chase,
+        ];
+        let behavior = match behavior_setting {
+            0 => Some(BotBehavior::Static),
+            1 => Some(BotBehavior::Strafe),
+            2 => Some(BotBehavior::Chase),
+            _ => None,
+        };
+        let count = count.clamp(1, 10) as usize;
+        self.targets = (0..count)
+            .map(|index| {
+                let position = INITIAL_POSITIONS
+                    .get(index)
+                    .copied()
+                    .unwrap_or(RESPAWN_POINTS[index % RESPAWN_POINTS.len()]);
+                let mut bot = Bot::with_behavior(
+                    position,
+                    behavior.unwrap_or(mixed[index % mixed.len()]),
+                    index,
+                );
+                bot.hp = hp.clamp(50, 200);
+                bot.speed_multiplier = speed_multiplier.clamp(0.5, 2.0);
+                bot.respawn_seconds = respawn_seconds.clamp(0.5, 10.0);
+                bot
+            })
+            .collect();
+    }
+
     pub fn advance(&mut self, dt: f32, player_position: Vec3, walls: &[Aabb]) {
         self.feedback = (self.feedback - dt).max(0.0);
         for bot in &mut self.targets {
