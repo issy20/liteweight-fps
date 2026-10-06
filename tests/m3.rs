@@ -50,20 +50,37 @@ fn ads_interpolates_allows_fire_and_yields_to_reload() {
 }
 
 #[test]
-fn recoil_accumulates_recovers_and_ads_reduces_spread() {
+fn weapon_visual_recoil_returns_while_view_recoil_stays_and_ads_reduces_spread() {
     let mut w = Weapon::default();
+    let mut player = liteweight_fps::simulation::Player::new();
     let hip = w.spread(false);
     assert!(w.spread(true) > hip);
     w.fire();
-    let first = w.recoil;
-    assert!(first > 0.0);
+    assert!(w.visual_recoil > 0.0);
+    player.apply_recoil(w.data.recoil_kick);
+    let pitch_after_shot = player.pitch;
     w.advance(0.1, true);
     w.fire();
-    assert!(w.recoil > first);
     w.advance(2.0, true);
-    assert_eq!(w.recoil, 0.0);
+    assert_eq!(player.pitch, pitch_after_shot);
     assert_eq!(w.visual_recoil, 0.0);
     assert!(w.spread(false) < hip);
+}
+
+#[test]
+fn sustained_infinite_ammo_fire_preserves_cadence_after_many_shots() {
+    let mut loadout = liteweight_fps::simulation::weapon::Loadout::default();
+    assert!(loadout.fire_with_infinite_ammo(true, false, true));
+    let kick = loadout.active().data.recoil_kick;
+    assert!(kick > 0.0);
+
+    for _ in 1..80 {
+        for _ in 0..6 {
+            loadout.advance(1.0 / 60.0, false);
+        }
+        assert!(loadout.fire_with_infinite_ammo(true, false, true));
+    }
+    assert!(loadout.active().visual_recoil > 0.0);
 }
 
 #[test]

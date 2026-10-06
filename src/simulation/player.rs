@@ -68,21 +68,25 @@ impl Player {
         self.yaw += dx;
         self.pitch = (self.pitch - dy).clamp(-1.55, 1.55);
     }
+    /// Applies the accepted shot's upward pitch kick directly to the controllable view.
+    pub fn apply_recoil(&mut self, pitch_kick: f32) {
+        self.pitch = (self.pitch + pitch_kick).clamp(-1.55, 1.55);
+    }
     /// 視点位置とyaw/pitchから投影×ビュー行列を生成する。
     pub fn view_matrix(&self, aspect: f32) -> Mat4 {
-        self.view_matrix_with(aspect, 70., 0.)
+        self.view_matrix_with(aspect, 70.)
     }
-    pub fn aim_direction(&self, recoil: f32) -> Vec3 {
-        let pitch = (self.pitch + recoil).clamp(-1.55, 1.55);
+    pub fn aim_direction(&self) -> Vec3 {
+        let pitch = self.pitch;
         Vec3::new(
             self.yaw.sin() * pitch.cos(),
             pitch.sin(),
             -self.yaw.cos() * pitch.cos(),
         )
     }
-    pub fn view_matrix_with(&self, aspect: f32, fov: f32, recoil: f32) -> Mat4 {
+    pub fn view_matrix_with(&self, aspect: f32, fov: f32) -> Mat4 {
         let eye = self.position;
-        let target = eye + self.aim_direction(recoil);
+        let target = eye + self.aim_direction();
         let projection = Mat4::perspective_rh(fov.to_radians(), aspect, 0.1, 100.);
         projection * Mat4::look_at_rh(eye, target, Vec3::Y)
     }

@@ -190,6 +190,21 @@ fn look_updates_from_mouse_delta_and_clamps_pitch() {
 }
 
 #[test]
+fn sustained_recoil_can_be_countered_with_mouse_input() {
+    let mut player = Player::new();
+    for _ in 0..120 {
+        player.apply_recoil(0.012);
+        player.look(0.0, 0.012);
+    }
+    assert!(player.pitch.abs() < 1e-5);
+
+    player.apply_recoil(0.045);
+    assert!(player.pitch > 0.0);
+    player.look(0.0, 0.045);
+    assert!(player.pitch.abs() < 1e-5);
+}
+
+#[test]
 fn camera_matrix_uses_eye_position_and_look_direction() {
     let p = Player::new();
     let matrix = p.view_matrix(16.0 / 9.0);

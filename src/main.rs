@@ -67,9 +67,10 @@ impl App {
     }
     fn fire(&mut self, held: bool, pressed: bool) {
         let kind = self.weapons.active_kind();
-        let view_direction = self.player.aim_direction(self.weapons.active().recoil);
+        let view_direction = self.player.aim_direction();
         let moving = self.player.velocity.length_squared() > 0.01;
         let damage = self.weapons.active().data.damage;
+        let recoil_kick = self.weapons.active().data.recoil_kick;
         if !self
             .weapons
             .fire_with_infinite_ammo(held, pressed, self.infinite_ammo_active())
@@ -91,6 +92,7 @@ impl App {
             &self.colliders,
             damage,
         );
+        self.player.apply_recoil(recoil_kick);
         self.session
             .record_shot(kind, shot.hit, shot.headshot, shot.killed);
         if let Some(audio) = &self.audio {
@@ -697,11 +699,8 @@ impl ApplicationHandler for App {
                         )
                     };
                     r.update_text(&text);
-                    self.player.view_matrix_with(
-                        aspect,
-                        self.weapons.fov_with_base(self.settings.fov),
-                        self.weapons.active().recoil,
-                    )
+                    self.player
+                        .view_matrix_with(aspect, self.weapons.fov_with_base(self.settings.fov))
                 };
                 match r.render(matrix) {
                     Ok(true) => {

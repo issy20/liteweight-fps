@@ -47,7 +47,6 @@ pub struct WeaponData {
     pub hip_spread: f32,
     pub ads_spread: f32,
     pub recoil_kick: f32,
-    pub recoil_recovery: f32,
     pub mode: FireMode,
     pub bolt_seconds: f32,
 }
@@ -61,7 +60,6 @@ pub const AR: WeaponData = WeaponData {
     hip_spread: 0.018,
     ads_spread: 0.001,
     recoil_kick: 0.012,
-    recoil_recovery: 0.045,
     mode: FireMode::Automatic,
     bolt_seconds: 0.0,
 };
@@ -75,7 +73,6 @@ pub const PISTOL: WeaponData = WeaponData {
     hip_spread: 0.035,
     ads_spread: 0.004,
     recoil_kick: 0.045,
-    recoil_recovery: 0.035,
     mode: FireMode::SemiAutomatic,
     bolt_seconds: 0.0,
 };
@@ -92,7 +89,6 @@ pub const SNIPER: WeaponData = WeaponData {
     hip_spread: 0.0,
     ads_spread: 0.0,
     recoil_kick: 0.09,
-    recoil_recovery: 0.025,
     mode: FireMode::BoltAction,
     bolt_seconds: 1.2,
 };
@@ -102,7 +98,6 @@ pub struct Weapon {
     pub data: WeaponData,
     pub ammo: u32,
     pub ads_progress: f32,
-    pub recoil: f32,
     pub visual_recoil: f32,
     cooldown: f32,
     pub reload_remaining: f32,
@@ -120,7 +115,6 @@ impl Weapon {
             data,
             ammo: data.magazine,
             ads_progress: 0.,
-            recoil: 0.,
             visual_recoil: 0.,
             cooldown: 0.,
             reload_remaining: 0.,
@@ -128,7 +122,6 @@ impl Weapon {
         }
     }
     pub fn advance(&mut self, dt: f32, ads: bool) {
-        self.recoil = (self.recoil - self.data.recoil_recovery * dt).max(0.0);
         self.visual_recoil = (self.visual_recoil - dt * 10.0).max(0.0);
         let aiming = ads && self.reload_remaining == 0.0;
         let duration = if aiming {
@@ -208,7 +201,6 @@ impl Weapon {
             return false;
         }
         self.ammo -= 1;
-        self.recoil = (self.recoil + self.data.recoil_kick).min(0.3);
         self.visual_recoil = 1.0;
         self.cooldown = self.data.interval;
         if self.data.mode == FireMode::BoltAction {

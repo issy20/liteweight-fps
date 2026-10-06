@@ -27,8 +27,8 @@ fn ar_and_pistol_ads_use_a_less_magnified_view_than_the_initial_tuning() {
 fn sniper_ads_fov_change_does_not_move_or_pitch_the_player_camera() {
     let mut player = liteweight_fps::simulation::Player::new();
     player.look(0.3, 0.2);
-    let wide = player.view_matrix_with(16.0 / 9.0, 70.0, 0.02);
-    let scoped = player.view_matrix_with(16.0 / 9.0, 32.0, 0.02);
+    let wide = player.view_matrix_with(16.0 / 9.0, 70.0);
+    let scoped = player.view_matrix_with(16.0 / 9.0, 32.0);
     let world_ray = |matrix: glam::Mat4| {
         (matrix.inverse().project_point3(Vec3::new(0.0, 0.0, 0.5)) - player.position).normalize()
     };
