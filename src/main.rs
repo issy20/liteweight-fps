@@ -54,6 +54,7 @@ struct App {
     title: String,
     capture_requested: bool,
     captured: bool,
+    window_focused: bool,
     fixed: FixedStep,
     occluded: bool,
     suspended: bool,
@@ -378,6 +379,7 @@ impl ApplicationHandler for App {
                 }
             }
             WindowEvent::Focused(focused) => {
+                self.window_focused = focused;
                 if let Some(run) = &mut self.benchmark {
                     run.focus(focused);
                 }
@@ -407,6 +409,7 @@ impl ApplicationHandler for App {
                 }
             }
             WindowEvent::KeyboardInput { event, .. } => {
+                self.window_focused = true;
                 let pressed = event.state == ElementState::Pressed;
                 let gameplay_active =
                     !self.title_screen && !self.settings_menu && !self.results_screen;
@@ -600,7 +603,11 @@ impl ApplicationHandler for App {
                 let now = Instant::now();
                 let dt = now.duration_since(self.clock).as_secs_f64();
                 self.clock = now;
-                if self.captured && self.benchmark.is_none() {
+                let gameplay_active =
+                    !self.title_screen && !self.settings_menu && !self.results_screen;
+                if Input::should_simulate_gameplay(gameplay_active, self.window_focused)
+                    && self.benchmark.is_none()
+                {
                     if std::mem::take(&mut self.fire_input.reload)
                         && !self.infinite_ammo_active()
                         && !self.weapons.is_switching()
@@ -851,6 +858,7 @@ fn main() {
         title: String::new(),
         capture_requested: false,
         captured: false,
+        window_focused: false,
         fixed: FixedStep::new(60, 5),
         occluded: false,
         suspended: false,

@@ -252,6 +252,24 @@ fn wasd_moves_relative_to_yaw_and_normalizes_diagonal() {
 }
 
 #[test]
+fn player_can_walk_from_spawn_while_touching_the_arena_floor() {
+    let mut player = Player::new();
+    let colliders = world::arena_colliders_scaled(1.0);
+
+    for _ in 0..30 {
+        player.move_with_collision(
+            &colliders,
+            input(false, false, true, false, false, false),
+            1.0 / 60.0,
+        );
+    }
+
+    assert!(player.position.z < -1.0);
+    assert_eq!(player.position.y, EYE_HEIGHT);
+    assert!(player.on_ground);
+}
+
+#[test]
 fn left_and_right_keys_move_in_opposite_directions_and_cancel() {
     let dt = 1.0 / 60.0;
     // Aだけで左（-X方向）へ進む。

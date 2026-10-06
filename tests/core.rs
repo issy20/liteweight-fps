@@ -10,6 +10,15 @@ fn movement_key_presses_work_without_mouse_capture_and_releases_clear_in_any_scr
 }
 
 #[test]
+fn focused_gameplay_updates_do_not_depend_on_mouse_capture() {
+    use liteweight_fps::simulation::player::Input;
+
+    assert!(Input::should_simulate_gameplay(true, true));
+    assert!(!Input::should_simulate_gameplay(false, true));
+    assert!(!Input::should_simulate_gameplay(true, false));
+}
+
+#[test]
 fn frame_statistics_use_slowest_one_percent_and_nearest_rank() {
     assert!(stats(&[]).is_none());
     let mut samples = vec![10.0; 99];

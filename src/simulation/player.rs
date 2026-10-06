@@ -27,6 +27,10 @@ impl Input {
     pub fn should_update_movement_key(pressed: bool, gameplay_active: bool) -> bool {
         !pressed || gameplay_active
     }
+    /// Game simulation requires an active, focused window, but not a captured cursor.
+    pub fn should_simulate_gameplay(gameplay_active: bool, window_focused: bool) -> bool {
+        gameplay_active && window_focused
+    }
 }
 
 pub struct Player {
@@ -173,7 +177,7 @@ impl Player {
         colliders.iter().any(|c| {
             let cy_min = center.y - half;
             let cy_max = center.y + half;
-            if cy_max < c.min.y || cy_min > c.max.y {
+            if cy_max <= c.min.y || cy_min >= c.max.y {
                 return false;
             }
             let cx = center.x.clamp(c.min.x, c.max.x);
