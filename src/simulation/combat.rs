@@ -40,6 +40,7 @@ pub struct Combat {
     pub headshots: u32,
     pub kills: u32,
     pub spawn_cursor: usize,
+    pub arena_scale: f32,
 }
 
 impl Default for Combat {
@@ -65,6 +66,7 @@ impl Combat {
             headshots: 0,
             kills: 0,
             spawn_cursor: 0,
+            arena_scale: 1.0,
         }
     }
 
@@ -80,6 +82,30 @@ impl Combat {
         speed_multiplier: f32,
         respawn_seconds: f32,
     ) {
+        self.configure_bots_with_arena_scale(
+            count,
+            behavior_setting,
+            hp,
+            speed_multiplier,
+            respawn_seconds,
+            1.0,
+        );
+    }
+
+    pub fn configure_bots_with_arena_scale(
+        &mut self,
+        count: u32,
+        behavior_setting: u8,
+        hp: u32,
+        speed_multiplier: f32,
+        respawn_seconds: f32,
+        arena_scale: f32,
+    ) {
+        self.arena_scale = if arena_scale.is_finite() {
+            arena_scale.clamp(0.68, 1.4)
+        } else {
+            1.0
+        };
         const INITIAL_POSITIONS: [Vec3; 5] = [
             Vec3::new(0.0, 0.0, -6.0),
             Vec3::new(-7.0, 0.0, -11.0),
@@ -107,11 +133,17 @@ impl Combat {
                     .get(index)
                     .copied()
                     .unwrap_or(RESPAWN_POINTS[index % RESPAWN_POINTS.len()]);
+                let position = Vec3::new(
+                    position.x * self.arena_scale,
+                    position.y,
+                    position.z * self.arena_scale,
+                );
                 let mut bot = Bot::with_behavior(
                     position,
                     behavior.unwrap_or(mixed[index % mixed.len()]),
                     index,
                 );
+                bot.arena_scale = self.arena_scale;
                 bot.hp = hp.clamp(50, 200);
                 bot.speed_multiplier = speed_multiplier.clamp(0.5, 2.0);
                 bot.respawn_seconds = respawn_seconds.clamp(0.5, 10.0);
@@ -161,7 +193,12 @@ impl Combat {
         (0..RESPAWN_POINTS.len())
             .map(|offset| (self.spawn_cursor + offset) % RESPAWN_POINTS.len())
             .filter_map(|index| {
-                let position = RESPAWN_POINTS[index];
+                let point = RESPAWN_POINTS[index];
+                let position = Vec3::new(
+                    point.x * self.arena_scale,
+                    point.y,
+                    point.z * self.arena_scale,
+                );
                 (horizontal_distance(position, player_position) >= BOT_MIN_RESPAWN_DISTANCE
                     && self.targets[bot_index].can_spawn_at(position, bot_index, walls, positions))
                 .then_some((index, position))
@@ -193,12 +230,12 @@ impl Combat {
             if !bot.alive {
                 continue;
             }
-            for (part, bounds) in bot.boxes().iter().enumerate() {
-                if let Some(d) = bounds.ray_distance(origin, direction) {
+            for hitbox in bot.hitboxes() {
+                if let Some(d) = hitbox.bounds.ray_distance(origin, direction) {
                     if d < distance {
                         distance = d;
                         impact = true;
-                        target = Some((i, part == 1));
+                        target = Some((i, hitbox.headshot));
                     }
                 }
             }
@@ -221,5 +258,40 @@ impl Combat {
         self.last_shot = shot;
         self.feedback = 0.12;
         shot
+    }
+
+    /// カメラの照準点へ銃口から射線を引き、銃口視差を補正しつつ遮蔽物を維持する。
+    pub fn shoot_from_muzzle(
+        &mut self,
+        camera_origin: Vec3,
+        muzzle_origin: Vec3,
+        aim_direction: Vec3,
+        walls: &[Aabb],
+        damage: u32,
+    ) -> Shot {
+        let aim_direction = aim_direction.normalize_or_zero();
+        let mut aim_distance: f32 = 100.0;
+        for wall in walls {
+            if let Some(distance) = wall.ray_distance(camera_origin, aim_direction) {
+                aim_distance = aim_distance.min(distance);
+            }
+        }
+        for bot in &self.targets {
+            if bot.alive {
+                for hitbox in bot.hitboxes() {
+                    if let Some(distance) = hitbox.bounds.ray_distance(camera_origin, aim_direction)
+                    {
+                        aim_distance = aim_distance.min(distance);
+                    }
+                }
+            }
+        }
+        let aim_point = camera_origin + aim_direction * aim_distance;
+        self.shoot(
+            muzzle_origin,
+            (aim_point - muzzle_origin).normalize_or_zero(),
+            walls,
+            damage,
+        )
     }
 }

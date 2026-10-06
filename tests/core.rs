@@ -1,6 +1,15 @@
 use liteweight_fps::stats;
 
 #[test]
+fn movement_key_presses_work_without_mouse_capture_and_releases_clear_in_any_screen() {
+    use liteweight_fps::simulation::player::Input;
+
+    assert!(Input::should_update_movement_key(true, true));
+    assert!(!Input::should_update_movement_key(true, false));
+    assert!(Input::should_update_movement_key(false, false));
+}
+
+#[test]
 fn frame_statistics_use_slowest_one_percent_and_nearest_rank() {
     assert!(stats(&[]).is_none());
     let mut samples = vec![10.0; 99];

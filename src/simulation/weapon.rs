@@ -26,8 +26,8 @@ impl WeaponKind {
     }
     pub fn fov_with_base(self, base_fov: f32, ads_progress: f32) -> f32 {
         let ads_fov = match self {
-            Self::Pistol => 55.,
-            Self::AssaultRifle => 50.,
+            Self::Pistol => 62.,
+            Self::AssaultRifle => 60.,
             Self::Sniper => 32.,
         };
         let progress = ads_progress.clamp(0.0, 1.0);
@@ -163,6 +163,31 @@ impl Weapon {
         let right = view.cross(Vec3::Y).normalize_or_zero();
         (view + right * (SNIPER_HIP_ALIGNMENT_RADIANS.tan() * (1.0 - self.ads_progress)))
             .normalize_or_zero()
+    }
+    /// Reproducible per-shot hip-fire deviation; the sniper keeps its dedicated alignment rule.
+    pub fn spread_direction(&self, view_direction: Vec3, moving: bool, shot_index: u32) -> Vec3 {
+        let forward = self.shot_direction(view_direction);
+        if self.kind == WeaponKind::Sniper {
+            return forward;
+        }
+        let sample = shot_index.wrapping_mul(1664525).wrapping_add(1013904223);
+        let angle = (sample & 65535) as f32 / 65536.0 * std::f32::consts::TAU;
+        let radius = ((sample >> 16) as f32 / 65536.0).sqrt() * self.spread(moving);
+        let right = forward.cross(Vec3::Y).normalize_or_zero();
+        let up = right.cross(forward);
+        (forward + (right * angle.cos() + up * angle.sin()) * radius).normalize_or_zero()
+    }
+    /// 腰撃ち時の画面右下の銃口を返す。ADSでは照準線に近づく。
+    pub fn muzzle_position(&self, eye: Vec3, view_direction: Vec3) -> Vec3 {
+        let forward = view_direction.normalize_or_zero();
+        let right = forward.cross(Vec3::Y).normalize_or_zero();
+        let up = right.cross(forward).normalize_or_zero();
+        let hip_offset = match self.kind {
+            WeaponKind::Pistol => right * 0.20 - up * 0.16 + forward * 0.28,
+            WeaponKind::AssaultRifle => right * 0.31 - up * 0.22 + forward * 0.38,
+            WeaponKind::Sniper => right * 0.34 - up * 0.20 + forward * 0.42,
+        };
+        eye + hip_offset * (1.0 - self.ads_progress.clamp(0.0, 1.0))
     }
     pub fn reload(&mut self) -> bool {
         if self.reload_remaining > 0.0

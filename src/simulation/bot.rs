@@ -9,13 +9,19 @@ const BOT_AI_INTERVAL: f32 = 1.0 / 20.0;
 const BOT_STRAFE_SPEED: f32 = 2.2;
 const BOT_CHASE_SPEED: f32 = 1.8;
 const BOT_CHASE_STOP_DISTANCE: f32 = 4.5;
-const BOT_STRAFE_TURN_SECONDS: f32 = 1.2;
+const BOT_STRAFE_ANGULAR_SPEED: f32 = 0.9;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BotBehavior {
     Static,
     Strafe,
     Chase,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct BotHitbox {
+    pub bounds: Aabb,
+    pub headshot: bool,
 }
 
 pub struct Bot {
@@ -29,10 +35,10 @@ pub struct Bot {
     pub respawn_remaining: f32,
     spawn_slot: usize,
     ai_accumulator: f32,
-    decision_remaining: f32,
-    strafe_direction: f32,
+    strafe_phase: f32,
     chase_waypoint: usize,
     move_direction: Vec3,
+    pub arena_scale: f32,
 }
 
 impl Bot {
@@ -41,6 +47,11 @@ impl Bot {
     }
 
     pub fn with_behavior(position: Vec3, behavior: BotBehavior, spawn_slot: usize) -> Self {
+        let strafe_phase = if spawn_slot.is_multiple_of(2) {
+            0.0
+        } else {
+            std::f32::consts::PI
+        };
         Self {
             position,
             hp: 100,
@@ -52,26 +63,52 @@ impl Bot {
             respawn_remaining: 0.0,
             spawn_slot,
             ai_accumulator: 0.0,
-            decision_remaining: 0.0,
-            strafe_direction: if spawn_slot.is_multiple_of(2) {
-                1.0
-            } else {
-                -1.0
-            },
+            strafe_phase,
             chase_waypoint: 0,
-            move_direction: Vec3::ZERO,
+            move_direction: if behavior == BotBehavior::Strafe {
+                Vec3::X * (BOT_STRAFE_SPEED * strafe_phase.cos())
+            } else {
+                Vec3::ZERO
+            },
+            arena_scale: 1.0,
         }
     }
 
-    pub fn boxes(&self) -> [Aabb; 2] {
+    pub fn hitboxes(&self) -> [BotHitbox; 6] {
+        let region = |min: Vec3, max: Vec3, headshot| BotHitbox {
+            bounds: Aabb::new(self.position + min, self.position + max),
+            headshot,
+        };
         [
-            Aabb::new(
-                self.position + Vec3::new(-0.35, 0., -0.25),
-                self.position + Vec3::new(0.35, 1.55, 0.25),
+            region(
+                Vec3::new(-0.24, 0.96, -0.15),
+                Vec3::new(0.24, 1.67, 0.15),
+                false,
             ),
-            Aabb::new(
-                self.position + Vec3::new(-0.25, 1.55, -0.25),
-                self.position + Vec3::new(0.25, 2.05, 0.25),
+            region(
+                Vec3::new(-0.42, 0.67, -0.12),
+                Vec3::new(-0.12, 1.60, 0.12),
+                false,
+            ),
+            region(
+                Vec3::new(0.12, 0.67, -0.12),
+                Vec3::new(0.42, 1.60, 0.12),
+                false,
+            ),
+            region(
+                Vec3::new(-0.24, 0.0, -0.18),
+                Vec3::new(-0.03, 1.02, 0.18),
+                false,
+            ),
+            region(
+                Vec3::new(0.03, 0.0, -0.18),
+                Vec3::new(0.24, 1.02, 0.18),
+                false,
+            ),
+            region(
+                Vec3::new(-0.09, 1.77, -0.09),
+                Vec3::new(0.09, 2.03, 0.09),
+                true,
             ),
         ]
     }
@@ -115,6 +152,11 @@ impl Bot {
             self.ai_accumulator -= BOT_AI_INTERVAL;
             self.think(player_position);
         }
+        if self.behavior == BotBehavior::Strafe {
+            self.strafe_phase = (self.strafe_phase + BOT_STRAFE_ANGULAR_SPEED * dt)
+                .rem_euclid(std::f32::consts::TAU);
+            self.move_direction = Vec3::X * (BOT_STRAFE_SPEED * self.strafe_phase.cos());
+        }
         let displacement = self.move_direction * (dt * self.speed_multiplier);
         for axis in [0, 2] {
             let mut candidate = self.position;
@@ -128,14 +170,7 @@ impl Bot {
     fn think(&mut self, player_position: Vec3) {
         match self.behavior {
             BotBehavior::Static => self.move_direction = Vec3::ZERO,
-            BotBehavior::Strafe => {
-                self.decision_remaining -= BOT_AI_INTERVAL;
-                if self.decision_remaining <= 0.0 {
-                    self.strafe_direction *= -1.0;
-                    self.decision_remaining = BOT_STRAFE_TURN_SECONDS;
-                }
-                self.move_direction = Vec3::X * (self.strafe_direction * BOT_STRAFE_SPEED);
-            }
+            BotBehavior::Strafe => {}
             BotBehavior::Chase => {
                 let mut target = self.next_waypoint();
                 if let Some(waypoint) = target {
@@ -158,10 +193,14 @@ impl Bot {
 
     fn next_waypoint(&self) -> Option<Vec3> {
         match (self.spawn_slot, self.chase_waypoint) {
-            (2, 0) => Some(Vec3::new(16.0, 0.0, -10.0)),
-            (2, 1) => Some(Vec3::new(16.0, 0.0, 0.0)),
-            (4, 0) => Some(Vec3::new(18.0, 0.0, 0.0)),
-            (4, 1) => Some(Vec3::new(8.0, 0.0, 0.0)),
+            (2, 0) => Some(Vec3::new(
+                16.0 * self.arena_scale,
+                0.0,
+                -10.0 * self.arena_scale,
+            )),
+            (2, 1) => Some(Vec3::new(16.0 * self.arena_scale, 0.0, 0.0)),
+            (4, 0) => Some(Vec3::new(18.0 * self.arena_scale, 0.0, 0.0)),
+            (4, 1) => Some(Vec3::new(8.0 * self.arena_scale, 0.0, 0.0)),
             _ => None,
         }
     }
@@ -209,11 +248,10 @@ impl Bot {
         self.alive = true;
         self.respawn_remaining = 0.0;
         self.ai_accumulator = 0.0;
-        self.decision_remaining = 0.0;
-        self.strafe_direction = if self.spawn_slot.is_multiple_of(2) {
-            1.0
+        self.strafe_phase = if self.spawn_slot.is_multiple_of(2) {
+            0.0
         } else {
-            -1.0
+            std::f32::consts::PI
         };
         self.chase_waypoint = 0;
         self.move_direction = Vec3::ZERO;

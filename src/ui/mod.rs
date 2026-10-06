@@ -20,7 +20,11 @@ pub fn world_mesh(combat: &Combat) -> Scene {
         mannequin(&mut mesh, t.position, t.flash > 0.0);
     }
     if combat.feedback > 0.0 && combat.last_shot.impact {
-        mesh.cube(combat.last_shot.position, Vec3::splat(0.09), [1., 0.9, 0.4]);
+        mesh.cube(
+            combat.last_shot.position,
+            Vec3::splat(0.025),
+            [1., 0.9, 0.4],
+        );
     }
     mesh
 }
@@ -279,6 +283,57 @@ fn rect(mesh: &mut Scene, x: f32, y: f32, w: f32, h: f32, color: [f32; 3], aspec
         [color[0], color[1], color[2], 1.0],
         aspect,
     );
+}
+
+fn stroke_segment(
+    mesh: &mut Scene,
+    start: [f32; 2],
+    end: [f32; 2],
+    thickness: f32,
+    color: [f32; 3],
+    aspect: f32,
+) {
+    let delta = [end[0] - start[0], end[1] - start[1]];
+    let length = (delta[0] * delta[0] + delta[1] * delta[1]).sqrt();
+    if length <= f32::EPSILON {
+        return;
+    }
+    let normal = [
+        -delta[1] / length * thickness * 0.5,
+        delta[0] / length * thickness * 0.5,
+    ];
+    let base = mesh.vertices.len() as u16;
+    for point in [
+        [start[0] + normal[0], start[1] + normal[1]],
+        [end[0] + normal[0], end[1] + normal[1]],
+        [end[0] - normal[0], end[1] - normal[1]],
+        [start[0] - normal[0], start[1] - normal[1]],
+    ] {
+        mesh.vertices.push(Vertex {
+            position: [point[0] / aspect, point[1], 0.0],
+            color: [color[0], color[1], color[2], 1.0],
+        });
+    }
+    mesh.indices
+        .extend([base, base + 1, base + 2, base, base + 2, base + 3]);
+}
+
+fn tapered_rect(mesh: &mut Scene, shape: [f32; 5], color: [f32; 3], aspect: f32) {
+    let [x, y, bottom_width, top_width, height] = shape;
+    let base = mesh.vertices.len() as u16;
+    for (px, py) in [
+        (x - bottom_width * 0.5, y),
+        (x + bottom_width * 0.5, y),
+        (x + top_width * 0.5, y + height),
+        (x - top_width * 0.5, y + height),
+    ] {
+        mesh.vertices.push(Vertex {
+            position: [px / aspect, py, 0.0],
+            color: [color[0], color[1], color[2], 1.0],
+        });
+    }
+    mesh.indices
+        .extend([base, base + 1, base + 2, base, base + 2, base + 3]);
 }
 
 fn rect_alpha(mesh: &mut Scene, x: f32, y: f32, w: f32, h: f32, color: [f32; 4], aspect: f32) {
@@ -1164,7 +1219,12 @@ pub fn hud_mesh_with_menu(
             } else {
                 0.0
             };
-        rect(&mut m, x - body_w * 0.5, y, body_w, body_h, color, aspect);
+        let top_width = match weapon.kind {
+            WeaponKind::Pistol => body_w * 0.82,
+            WeaponKind::AssaultRifle => body_w * 0.72,
+            WeaponKind::Sniper => body_w * 0.58,
+        };
+        tapered_rect(&mut m, [x, y, body_w, top_width, body_h], color, aspect);
         rect(
             &mut m,
             x - 0.04,
@@ -1176,6 +1236,12 @@ pub fn hud_mesh_with_menu(
         );
         match weapon.kind {
             WeaponKind::Pistol => {
+                tapered_rect(
+                    &mut m,
+                    [x, y - 0.09, 0.047, 0.036, 0.13],
+                    [0.12, 0.14, 0.16],
+                    aspect,
+                );
                 rect(
                     &mut m,
                     x - body_w * 0.36,
@@ -1225,12 +1291,9 @@ pub fn hud_mesh_with_menu(
                 ); // front sight
             }
             WeaponKind::AssaultRifle => {
-                rect(
+                tapered_rect(
                     &mut m,
-                    x - 0.105,
-                    y + 0.06,
-                    0.045,
-                    0.15,
+                    [x - 0.105, y + 0.06, 0.055, 0.035, 0.15],
                     [0.24, 0.27, 0.3],
                     aspect,
                 ); // stock
@@ -1292,6 +1355,12 @@ pub fn hud_mesh_with_menu(
                 );
             }
             WeaponKind::Sniper => {
+                tapered_rect(
+                    &mut m,
+                    [x, y - 0.13, 0.05, 0.032, 0.16],
+                    [0.12, 0.14, 0.17],
+                    aspect,
+                );
                 rect(
                     &mut m,
                     x - 0.018,
@@ -1387,16 +1456,26 @@ pub fn hud_mesh_with_menu(
     rect(&mut m, -0.002, -0.002, 0.004, 0.004, [1.; 3], aspect);
     if combat.feedback > 0.0 && combat.last_shot.hit {
         let color = if combat.last_shot.killed {
-            [1., 0.2, 0.2]
+            [1.0, 0.05, 0.06]
         } else if combat.last_shot.headshot {
-            [1., 0.7, 0.1]
+            [0.98, 0.21, 0.05]
         } else {
-            [1.; 3]
+            [1.0, 0.3, 0.24]
         };
-        for x in [-0.025, 0.021] {
-            for y in [-0.025, 0.021] {
-                rect(&mut m, x, y, 0.006, 0.006, color, aspect);
-            }
+        let (inner, outer, thickness) = if combat.last_shot.killed {
+            (0.014, 0.046, 0.007)
+        } else {
+            (0.02, 0.033, 0.0035)
+        };
+        for (x, y) in [(-1.0, -1.0), (-1.0, 1.0), (1.0, -1.0), (1.0, 1.0)] {
+            stroke_segment(
+                &mut m,
+                [x * inner, y * inner],
+                [x * outer, y * outer],
+                thickness,
+                color,
+                aspect,
+            );
         }
     }
     if weapon.bolt_remaining > 0.0 {

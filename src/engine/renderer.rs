@@ -102,12 +102,12 @@ impl SceneRenderer {
         let vertex = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("scene vertices"),
             contents: bytemuck::cast_slice(&mesh.vertices),
-            usage: wgpu::BufferUsages::VERTEX,
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
         });
         let index = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("scene indices"),
             contents: bytemuck::cast_slice(&mesh.indices),
-            usage: wgpu::BufferUsages::INDEX,
+            usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
         });
         let uniform = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("camera"),
@@ -304,6 +304,26 @@ impl SceneRenderer {
     }
     pub fn layout(&self) -> &FrameLayout {
         &self.layout
+    }
+    pub fn update_scene(&mut self, queue: &wgpu::Queue, mesh: &Scene) -> Result<(), String> {
+        if mesh.vertices.is_empty()
+            || mesh.indices.is_empty()
+            || mesh
+                .indices
+                .iter()
+                .any(|index| usize::from(*index) >= mesh.vertices.len())
+        {
+            return Err("シーンの頂点・インデックスが不正です".into());
+        }
+        if bytemuck::cast_slice::<Vertex, u8>(&mesh.vertices).len() as u64 > self.vertex.size()
+            || bytemuck::cast_slice::<u16, u8>(&mesh.indices).len() as u64 > self.index.size()
+        {
+            return Err("更新後のシーンがGPUバッファ容量を超えています".into());
+        }
+        queue.write_buffer(&self.vertex, 0, bytemuck::cast_slice(&mesh.vertices));
+        queue.write_buffer(&self.index, 0, bytemuck::cast_slice(&mesh.indices));
+        self.count = mesh.indices.len() as u32;
+        Ok(())
     }
     pub fn resize_display(&mut self, width: u32, height: u32) {
         self.layout.resize(width, height);

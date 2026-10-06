@@ -47,6 +47,26 @@ fn static_strafe_and_chase_behaviors_have_distinct_motion() {
 }
 
 #[test]
+fn strafing_bot_reverses_direction_smoothly_for_tracking_practice() {
+    let mut bot = Bot::with_behavior(Vec3::ZERO, BotBehavior::Strafe, 0);
+    bot.advance_motion(0, 1.0 / 60.0, Vec3::new(0.0, 0.0, -10.0), &[], &[]);
+    let mut previous_velocity = (bot.position.x) * 60.0;
+    let mut peak_velocity = 0.0_f32;
+    for _ in 0..180 {
+        let before = bot.position.x;
+        bot.advance_motion(0, 1.0 / 60.0, Vec3::new(0.0, 0.0, -10.0), &[], &[]);
+        let velocity = (bot.position.x - before) * 60.0;
+        assert!((velocity - previous_velocity).abs() < 0.08);
+        peak_velocity = peak_velocity.max(velocity.abs());
+        previous_velocity = velocity;
+    }
+    assert!(
+        peak_velocity > 1.5,
+        "sweeps should remain wide enough to track"
+    );
+}
+
+#[test]
 fn killed_bot_stays_dead_then_respawns_without_resetting_score() {
     let bot = Bot::new(Vec3::new(0.0, 0.0, -5.0));
     let mut combat = Combat::new(vec![bot]);
@@ -242,12 +262,12 @@ fn bot_render_mesh_is_a_faceless_mannequin_with_clear_head_accent() {
 
     // Rendering detail must not expand or replace the torso/head hitboxes.
     assert_eq!(
-        combat.targets[0].boxes()[0],
-        Aabb::new(Vec3::new(-0.35, 0.0, -5.25), Vec3::new(0.35, 1.55, -4.75))
+        combat.targets[0].hitboxes()[0].bounds,
+        Aabb::new(Vec3::new(-0.24, 0.96, -5.15), Vec3::new(0.24, 1.67, -4.85))
     );
     assert_eq!(
-        combat.targets[0].boxes()[1],
-        Aabb::new(Vec3::new(-0.25, 1.55, -5.25), Vec3::new(0.25, 2.05, -4.75))
+        combat.targets[0].hitboxes()[5].bounds,
+        Aabb::new(Vec3::new(-0.09, 1.77, -5.09), Vec3::new(0.09, 2.03, -4.91))
     );
 }
 
@@ -316,6 +336,56 @@ fn headshots_and_body_hits_update_independent_score_counts() {
     assert_eq!(combat.hits, 2);
     assert_eq!(combat.headshots, 1);
     assert_eq!(combat.kills, 0);
+}
+
+#[test]
+fn hitscan_does_not_hit_in_the_small_neck_gap_between_torso_and_head() {
+    let mut combat = Combat::new(vec![Bot::new(Vec3::new(0.0, 0.0, -5.0))]);
+    let shot = combat.shoot(Vec3::new(0.0, 1.72, 0.0), -Vec3::Z, &[], 25);
+    assert!(
+        !shot.hit,
+        "the small neck gap must not be covered by oversized boxes"
+    );
+}
+
+#[test]
+fn muzzle_shot_converges_on_camera_aim_and_still_respects_cover() {
+    let mut combat = Combat::new(vec![Bot::new(Vec3::new(0.0, 0.0, -5.0))]);
+    let corrected = combat.shoot_from_muzzle(
+        Vec3::new(0.0, 1.4, 0.0),
+        Vec3::new(0.3, 1.2, 0.4),
+        -Vec3::Z,
+        &[],
+        25,
+    );
+    assert!(
+        corrected.hit,
+        "muzzle parallax should be corrected toward the reticle"
+    );
+
+    let wall = Aabb::new(Vec3::new(-2.0, 0.0, -2.0), Vec3::new(2.0, 3.0, -1.5));
+    let blocked = combat.shoot_from_muzzle(
+        Vec3::new(0.0, 1.4, 0.0),
+        Vec3::new(0.3, 1.2, 0.4),
+        -Vec3::Z,
+        &[wall],
+        25,
+    );
+    assert!(
+        !blocked.hit,
+        "the camera aim point must not let muzzle shots pass cover"
+    );
+}
+
+#[test]
+fn bot_population_configuration_scales_spawns_and_respawns_with_arena() {
+    let mut small = Combat::new(Vec::new());
+    small.configure_bots_with_arena_scale(5, 1, 100, 1.0, 2.0, 0.68);
+    let mut large = Combat::new(Vec::new());
+    large.configure_bots_with_arena_scale(5, 1, 100, 1.0, 2.0, 1.4);
+    assert!(large.targets[3].position.x.abs() > small.targets[3].position.x.abs());
+    assert_eq!(large.arena_scale, 1.4);
+    assert!(large.targets.iter().all(|bot| bot.arena_scale == 1.4));
 }
 
 #[test]

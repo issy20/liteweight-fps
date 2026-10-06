@@ -45,30 +45,49 @@ impl Scene {
 }
 /// 静的な50m角のアリーナ。移動・衝突・AIには依存しない。
 pub fn arena() -> Scene {
+    arena_scaled(1.0)
+}
+
+/// BOT数1〜10に合わせて、50m角を34m〜70mへ水平スケールする。
+pub fn arena_scale_for_bot_count(count: u32) -> f32 {
+    0.68 + (count.clamp(1, 10) - 1) as f32 * 0.08
+}
+
+pub fn arena_scaled(scale: f32) -> Scene {
+    let scale = if scale.is_finite() {
+        scale.clamp(0.68, 1.4)
+    } else {
+        1.0
+    };
+    let horizontal = |v: Vec3| Vec3::new(v.x * scale, v.y, v.z * scale);
     let mut s = Scene {
         vertices: Vec::new(),
         indices: Vec::new(),
     };
     s.cube(
-        Vec3::new(0., -0.25, 0.),
-        Vec3::new(50., 0.5, 50.),
+        horizontal(Vec3::new(0., -0.25, 0.)),
+        horizontal(Vec3::new(50., 0.5, 50.)),
         [0.35, 0.4, 0.45],
     );
     for x in [-25., 25.] {
         s.cube(
-            Vec3::new(x, 2., 0.),
-            Vec3::new(0.5, 4., 50.),
+            horizontal(Vec3::new(x, 2., 0.)),
+            horizontal(Vec3::new(0.5, 4., 50.)),
             [0.5, 0.55, 0.6],
         );
         s.cube(
-            Vec3::new(0., 2., x),
-            Vec3::new(50., 4., 0.5),
+            horizontal(Vec3::new(0., 2., x)),
+            horizontal(Vec3::new(50., 4., 0.5)),
             [0.5, 0.55, 0.6],
         );
     }
     for x in [-12., 0., 12.] {
         for z in [-8., 8.] {
-            s.cube(Vec3::new(x, 1., z), Vec3::new(3., 2., 3.), [0.3, 0.5, 0.55]);
+            s.cube(
+                horizontal(Vec3::new(x, 1., z)),
+                horizontal(Vec3::new(3., 2., 3.)),
+                [0.3, 0.5, 0.55],
+            );
         }
     }
     s
@@ -92,26 +111,35 @@ pub fn scene(dummies: u32) -> Scene {
 
 /// アリーナの床・壁・遮蔽物をAABBコライダーとして返す。床は範囲外落下防止のための平面。
 pub fn arena_colliders() -> Vec<Aabb> {
+    arena_colliders_scaled(1.0)
+}
+
+pub fn arena_colliders_scaled(scale: f32) -> Vec<Aabb> {
+    let scale = if scale.is_finite() {
+        scale.clamp(0.68, 1.4)
+    } else {
+        1.0
+    };
     let mut colliders = Vec::new();
     colliders.push(Aabb::new(
-        Vec3::new(-25., -0.5, -25.),
-        Vec3::new(25., 0., 25.),
+        Vec3::new(-25. * scale, -0.5, -25. * scale),
+        Vec3::new(25. * scale, 0., 25. * scale),
     ));
     for x in [-25., 25.] {
         colliders.push(Aabb::new(
-            Vec3::new(x - 0.25, 0., -25.),
-            Vec3::new(x + 0.25, 4., 25.),
+            Vec3::new(x * scale - 0.25 * scale, 0., -25. * scale),
+            Vec3::new(x * scale + 0.25 * scale, 4., 25. * scale),
         ));
         colliders.push(Aabb::new(
-            Vec3::new(-25., 0., x - 0.25),
-            Vec3::new(25., 4., x + 0.25),
+            Vec3::new(-25. * scale, 0., x * scale - 0.25 * scale),
+            Vec3::new(25. * scale, 4., x * scale + 0.25 * scale),
         ));
     }
     for x in [-12., 0., 12.] {
         for z in [-8., 8.] {
             colliders.push(Aabb::new(
-                Vec3::new(x - 1.5, 0., z - 1.5),
-                Vec3::new(x + 1.5, 2., z + 1.5),
+                Vec3::new((x - 1.5) * scale, 0., (z - 1.5) * scale),
+                Vec3::new((x + 1.5) * scale, 2., (z + 1.5) * scale),
             ));
         }
     }

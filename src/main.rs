@@ -68,9 +68,7 @@ impl App {
     fn fire(&mut self, held: bool, pressed: bool) {
         let kind = self.weapons.active_kind();
         let view_direction = self.player.aim_direction(self.weapons.active().recoil);
-        let forward = self.weapons.active().shot_direction(view_direction);
         let moving = self.player.velocity.length_squared() > 0.01;
-        let spread = self.weapons.active().spread(moving);
         let damage = self.weapons.active().data.damage;
         if !self
             .weapons
@@ -78,24 +76,21 @@ impl App {
         {
             return;
         }
-        let direction = if kind == WeaponKind::Sniper {
-            forward
-        } else {
-            // 発砲番号から再現可能な円盤内の拡散。反動を加える前の射線を使う。
-            let n = self
-                .combat
-                .shots
-                .wrapping_mul(1664525)
-                .wrapping_add(1013904223);
-            let angle = (n & 65535) as f32 / 65536. * std::f32::consts::TAU;
-            let radius = ((n >> 16) as f32 / 65536.).sqrt() * spread;
-            let right = forward.cross(glam::Vec3::Y).normalize();
-            let up = right.cross(forward);
-            (forward + (right * angle.cos() + up * angle.sin()) * radius).normalize()
-        };
-        let shot = self
-            .combat
-            .shoot(self.player.position, direction, &self.colliders, damage);
+        let direction =
+            self.weapons
+                .active()
+                .spread_direction(view_direction, moving, self.combat.shots);
+        let muzzle = self
+            .weapons
+            .active()
+            .muzzle_position(self.player.position, view_direction);
+        let shot = self.combat.shoot_from_muzzle(
+            self.player.position,
+            muzzle,
+            direction,
+            &self.colliders,
+            damage,
+        );
         self.session
             .record_shot(kind, shot.hit, shot.headshot, shot.killed);
         if let Some(audio) = &self.audio {
@@ -175,12 +170,14 @@ impl App {
         self.weapons = Loadout::default();
         self.fire_input = FireInput::default();
         self.combat = Combat::default();
-        self.combat.configure_bots_with(
+        let arena_scale = world::arena_scale_for_bot_count(self.settings.bot_count);
+        self.combat.configure_bots_with_arena_scale(
             self.settings.bot_count,
             self.settings.bot_behavior,
             self.settings.bot_hp,
             self.settings.bot_speed,
             self.settings.bot_respawn_seconds,
+            arena_scale,
         );
         self.session = TrainingSession::new(mode);
         self.title_screen = false;
@@ -198,13 +195,23 @@ impl App {
     }
     fn apply_runtime_setting(&mut self, setting: usize) {
         match setting {
-            3 | 4 | 6 | 7 | 8 => self.combat.configure_bots_with(
-                self.settings.bot_count,
-                self.settings.bot_behavior,
-                self.settings.bot_hp,
-                self.settings.bot_speed,
-                self.settings.bot_respawn_seconds,
-            ),
+            3 | 4 | 6 | 7 | 8 => {
+                let arena_scale = world::arena_scale_for_bot_count(self.settings.bot_count);
+                self.combat.configure_bots_with_arena_scale(
+                    self.settings.bot_count,
+                    self.settings.bot_behavior,
+                    self.settings.bot_hp,
+                    self.settings.bot_speed,
+                    self.settings.bot_respawn_seconds,
+                    arena_scale,
+                );
+                self.colliders = world::arena_colliders_scaled(arena_scale);
+                if let Some(renderer) = &mut self.renderer {
+                    if let Err(error) = renderer.update_scene(&world::arena_scaled(arena_scale)) {
+                        self.error = Some(error);
+                    }
+                }
+            }
             5 => {
                 if let Some(audio) = &mut self.audio {
                     audio.set_volume(self.settings.volume);
@@ -269,7 +276,11 @@ impl ApplicationHandler for App {
                 run.options.vsync,
             )
         } else {
-            (world::arena(), (1280, 720), true)
+            (
+                world::arena_scaled(world::arena_scale_for_bot_count(self.settings.bot_count)),
+                (1280, 720),
+                true,
+            )
         };
         match pollster::block_on(WindowRenderer::new(window, &mesh, internal, vsync)) {
             Ok(mut r) => {
@@ -395,6 +406,8 @@ impl ApplicationHandler for App {
             }
             WindowEvent::KeyboardInput { event, .. } => {
                 let pressed = event.state == ElementState::Pressed;
+                let gameplay_active =
+                    !self.title_screen && !self.settings_menu && !self.results_screen;
                 if self.benchmark.is_none() {
                     match event.physical_key {
                         PhysicalKey::Code(KeyCode::ArrowUp)
@@ -522,6 +535,40 @@ impl ApplicationHandler for App {
                                 eprintln!("設定を保存できません: {error}");
                             }
                         }
+                        PhysicalKey::Code(KeyCode::KeyA)
+                            if Input::should_update_movement_key(pressed, gameplay_active) =>
+                        {
+                            self.input.left = pressed
+                        }
+                        PhysicalKey::Code(KeyCode::KeyD)
+                            if Input::should_update_movement_key(pressed, gameplay_active) =>
+                        {
+                            self.input.right = pressed
+                        }
+                        PhysicalKey::Code(KeyCode::KeyW)
+                            if Input::should_update_movement_key(pressed, gameplay_active) =>
+                        {
+                            self.input.forward = pressed
+                        }
+                        PhysicalKey::Code(KeyCode::KeyS)
+                            if Input::should_update_movement_key(pressed, gameplay_active) =>
+                        {
+                            self.input.back = pressed
+                        }
+                        PhysicalKey::Code(KeyCode::ShiftLeft | KeyCode::ShiftRight)
+                            if Input::should_update_movement_key(pressed, gameplay_active) =>
+                        {
+                            self.input.dash = pressed
+                        }
+                        PhysicalKey::Code(KeyCode::Space)
+                            if pressed
+                                && !event.repeat
+                                && !self.title_screen
+                                && !self.settings_menu
+                                && !self.results_screen =>
+                        {
+                            self.input.jump = true
+                        }
                         _ if !self.captured => {}
                         PhysicalKey::Code(KeyCode::Digit1) if pressed && !event.repeat => {
                             self.switch_weapon(WeaponKind::Pistol);
@@ -532,29 +579,13 @@ impl ApplicationHandler for App {
                         PhysicalKey::Code(KeyCode::Digit3) if pressed && !event.repeat => {
                             self.switch_weapon(WeaponKind::Sniper);
                         }
-                        PhysicalKey::Code(KeyCode::KeyR) if pressed && !event.repeat => {
-                            if !self.infinite_ammo_active() {
-                                self.fire_input.reload = true;
-                            }
-                        }
-                        PhysicalKey::Code(KeyCode::KeyA) => self.input.left = pressed,
-                        PhysicalKey::Code(KeyCode::KeyD) => self.input.right = pressed,
-                        PhysicalKey::Code(KeyCode::KeyW) => self.input.forward = pressed,
-                        PhysicalKey::Code(KeyCode::KeyS) => self.input.back = pressed,
-                        PhysicalKey::Code(KeyCode::ShiftLeft | KeyCode::ShiftRight) => {
-                            self.input.dash = pressed
-                        }
-                        PhysicalKey::Code(KeyCode::Space) if pressed && !event.repeat => {
-                            self.input.jump = true
+                        PhysicalKey::Code(KeyCode::KeyR)
+                            if pressed && !event.repeat && !self.infinite_ammo_active() =>
+                        {
+                            self.fire_input.reload = true;
                         }
                         _ => {}
                     }
-                }
-                if pressed
-                    && !event.repeat
-                    && event.physical_key == PhysicalKey::Code(KeyCode::KeyQ)
-                {
-                    self.finish(event_loop, false);
                 }
             }
             WindowEvent::RedrawRequested => {
@@ -754,7 +785,7 @@ fn main() {
     let start = Instant::now();
     let args: Vec<_> = std::env::args().skip(1).collect();
     if args == ["--help"] {
-        println!("liteweight-fps M6: タイトル画面でFree Trainingまたは5-Minute Challengeを選択。\nWASD:移動 Shift:ダッシュ Space:ジャンプ LMB:射撃 RMB:ADS R:リロード Esc:ポーズ Q:終了\n--smoke: 自動リサイズ確認後に終了\n--benchmark [M0と同じ引数]: M0シーンで描画基盤の回帰測定（--mode inputは非対応）\n1/2/3:拳銃/AR/スナイパー切替 LMB:射撃 RMB:ADS R:リロード");
+        println!("liteweight-fps M6: タイトル画面でFree Trainingまたは5-Minute Challengeを選択。\nWASD:移動 Shift:ダッシュ Space:ジャンプ LMB:射撃 RMB:ADS R:リロード Esc:ポーズ（メニューから再開・終了）\n--smoke: 自動リサイズ確認後に終了\n--benchmark [M0と同じ引数]: M0シーンで描画基盤の回帰測定（--mode inputは非対応）\n1/2/3:拳銃/AR/スナイパー切替 LMB:射撃 RMB:ADS R:リロード");
         return;
     }
     let smoke = args == ["--smoke"];
@@ -794,6 +825,8 @@ fn main() {
     }
     let event_loop = builder.build().expect("event loop");
     let title_screen = !smoke && options.is_none();
+    let settings = GameSettings::load();
+    let arena_scale = world::arena_scale_for_bot_count(settings.bot_count);
     let mut app = App {
         renderer: None,
         benchmark: options.map(|o| Run::new(o, start, String::new())),
@@ -802,12 +835,12 @@ fn main() {
         smoke_started: None,
         clock: Instant::now(),
         player: Player::new(),
-        colliders: world::arena_colliders(),
+        colliders: world::arena_colliders_scaled(arena_scale),
         input: Input::default(),
         weapons: Loadout::default(),
         fire_input: FireInput::default(),
         combat: Combat::default(),
-        settings: GameSettings::load(),
+        settings,
         session: TrainingSession::new(SessionMode::FreeTraining),
         title_screen,
         settings_menu: false,

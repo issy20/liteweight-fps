@@ -121,6 +121,9 @@ impl WindowRenderer {
     pub fn update_extras(&mut self, world: &Scene, hud: &Scene) {
         self.scene.update_extras(&self.queue, world, hud);
     }
+    pub fn update_scene(&mut self, world: &Scene) -> Result<(), String> {
+        self.scene.update_scene(&self.queue, world)
+    }
     pub fn update_text(&mut self, text: &super::text::TextMesh) {
         self.scene.update_text(&self.device, &self.queue, text);
     }

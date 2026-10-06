@@ -1,3 +1,4 @@
+use glam::Vec3;
 use liteweight_fps::simulation::weapon::{FireInput, Loadout, WeaponKind};
 
 #[test]
@@ -13,6 +14,44 @@ fn loadout_starts_with_ar_and_keeps_magazines_per_weapon() {
     assert_eq!(loadout.active().ammo, 6);
     loadout.switch(WeaponKind::AssaultRifle);
     assert_eq!(loadout.active().ammo, 29);
+}
+
+#[test]
+fn ar_and_pistol_ads_use_a_less_magnified_view_than_the_initial_tuning() {
+    assert_eq!(WeaponKind::AssaultRifle.fov(1.0), 60.0);
+    assert_eq!(WeaponKind::Pistol.fov(1.0), 62.0);
+    assert_eq!(WeaponKind::Sniper.fov(1.0), 32.0);
+}
+
+#[test]
+fn sniper_ads_fov_change_does_not_move_or_pitch_the_player_camera() {
+    let mut player = liteweight_fps::simulation::Player::new();
+    player.look(0.3, 0.2);
+    let wide = player.view_matrix_with(16.0 / 9.0, 70.0, 0.02);
+    let scoped = player.view_matrix_with(16.0 / 9.0, 32.0, 0.02);
+    let world_ray = |matrix: glam::Mat4| {
+        (matrix.inverse().project_point3(Vec3::new(0.0, 0.0, 0.5)) - player.position).normalize()
+    };
+    assert!(world_ray(wide).dot(world_ray(scoped)) > 0.99999);
+    assert_eq!(player.position, Vec3::new(0.0, 1.6, 0.0));
+}
+
+#[test]
+fn hip_fire_has_reproducible_shot_to_shot_spread_while_sniper_stays_deterministic() {
+    let mut loadout = Loadout::default();
+    let view = -Vec3::Z;
+    let ar = loadout.active();
+    let first = ar.spread_direction(view, false, 0);
+    let second = ar.spread_direction(view, false, 1);
+    assert_ne!(first, second);
+    assert_eq!(first, ar.spread_direction(view, false, 0));
+
+    loadout.switch(WeaponKind::Sniper);
+    let sniper = loadout.active();
+    assert_eq!(
+        sniper.spread_direction(view, false, 0),
+        sniper.spread_direction(view, false, 1)
+    );
 }
 
 #[test]

@@ -61,3 +61,25 @@ fn arena_has_floor_four_walls_and_six_covers_without_targets() {
     assert_eq!(&benchmark.vertices[..mesh.vertices.len()], &mesh.vertices);
     assert_eq!(&benchmark.indices[..mesh.indices.len()], &mesh.indices);
 }
+
+#[test]
+fn arena_size_scales_with_bot_population_while_default_stays_50_meters() {
+    use liteweight_fps::world::{arena_colliders_scaled, arena_scale_for_bot_count, arena_scaled};
+
+    assert_eq!(arena_scale_for_bot_count(5), 1.0);
+    assert!(arena_scale_for_bot_count(1) < 1.0);
+    assert!(arena_scale_for_bot_count(10) > 1.0);
+    let normal = liteweight_fps::world::arena();
+    let large = arena_scaled(arena_scale_for_bot_count(10));
+    let min_z = |mesh: &liteweight_fps::Scene| {
+        mesh.vertices
+            .iter()
+            .map(|vertex| vertex.position[2])
+            .fold(f32::INFINITY, f32::min)
+    };
+    assert_eq!(min_z(&normal), -25.25);
+    assert!(min_z(&large) < min_z(&normal));
+    assert!(
+        arena_colliders_scaled(1.4)[1].min.x < liteweight_fps::world::arena_colliders()[1].min.x
+    );
+}

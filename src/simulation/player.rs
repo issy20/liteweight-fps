@@ -22,6 +22,12 @@ pub struct Input {
     pub dash: bool,
     pub jump: bool,
 }
+impl Input {
+    /// Movement presses belong to active play, while releases must always clear stale state.
+    pub fn should_update_movement_key(pressed: bool, gameplay_active: bool) -> bool {
+        !pressed || gameplay_active
+    }
+}
 
 pub struct Player {
     pub position: Vec3,

@@ -159,8 +159,8 @@ fn configured_fov_applies_to_hip_view_and_blends_into_weapon_ads_fov() {
     };
     let loadout = liteweight_fps::simulation::weapon::Loadout::default();
     assert_eq!(loadout.active_kind().fov_with_base(settings.fov, 0.0), 90.0);
-    assert_eq!(loadout.active_kind().fov_with_base(settings.fov, 1.0), 50.0);
-    assert_eq!(loadout.active_kind().fov_with_base(settings.fov, 0.5), 70.0);
+    assert_eq!(loadout.active_kind().fov_with_base(settings.fov, 1.0), 60.0);
+    assert_eq!(loadout.active_kind().fov_with_base(settings.fov, 0.5), 75.0);
 }
 
 #[test]
@@ -378,4 +378,71 @@ fn free_training_infinite_ammo_keeps_magazine_full_without_bypassing_fire_cadenc
     }
     assert_eq!(fired, 41);
     assert_eq!(loadout.active().ammo, magazine);
+}
+
+#[test]
+fn enemy_hit_marker_is_red_and_more_prominent_than_the_reticle() {
+    let weapon = liteweight_fps::simulation::weapon::Weapon::default();
+    let mut combat = liteweight_fps::simulation::combat::Combat::new(Vec::new());
+    combat.feedback = 0.2;
+    combat.last_shot = liteweight_fps::simulation::combat::Shot {
+        hit: true,
+        ..Default::default()
+    };
+    let aspect = 16.0 / 9.0;
+    let mesh = liteweight_fps::ui::hud_mesh(&weapon, &combat, aspect, 0.0);
+    let markers = mesh
+        .vertices
+        .iter()
+        .filter(|vertex| vertex.color == [1.0, 0.3, 0.24, 1.0])
+        .collect::<Vec<_>>();
+    assert_eq!(markers.len(), 16, "four red strokes use four vertices each");
+    let min_x = markers
+        .iter()
+        .map(|vertex| vertex.position[0] * aspect)
+        .fold(f32::INFINITY, f32::min);
+    let max_x = markers
+        .iter()
+        .map(|vertex| vertex.position[0] * aspect)
+        .fold(f32::NEG_INFINITY, f32::max);
+    assert!((max_x - min_x - 0.0685).abs() < 1e-4);
+    let (strokes, remainder) = markers.as_slice().as_chunks::<4>();
+    assert!(remainder.is_empty());
+    for stroke in strokes {
+        let dx = (stroke[1].position[0] - stroke[0].position[0]) * aspect;
+        let dy = stroke[1].position[1] - stroke[0].position[1];
+        assert!(
+            (dx.abs() - dy.abs()).abs() < 1e-5,
+            "hit mark should use diagonal lines"
+        );
+    }
+}
+
+#[test]
+fn kill_hit_marker_keeps_the_larger_heavier_red_strokes() {
+    let weapon = liteweight_fps::simulation::weapon::Weapon::default();
+    let mut combat = liteweight_fps::simulation::combat::Combat::new(Vec::new());
+    combat.feedback = 0.2;
+    combat.last_shot = liteweight_fps::simulation::combat::Shot {
+        hit: true,
+        killed: true,
+        ..Default::default()
+    };
+    let aspect = 16.0 / 9.0;
+    let mesh = liteweight_fps::ui::hud_mesh(&weapon, &combat, aspect, 0.0);
+    let markers = mesh
+        .vertices
+        .iter()
+        .filter(|vertex| vertex.color == [1.0, 0.05, 0.06, 1.0])
+        .collect::<Vec<_>>();
+    assert_eq!(markers.len(), 16);
+    let min_x = markers
+        .iter()
+        .map(|vertex| vertex.position[0] * aspect)
+        .fold(f32::INFINITY, f32::min);
+    let max_x = markers
+        .iter()
+        .map(|vertex| vertex.position[0] * aspect)
+        .fold(f32::NEG_INFINITY, f32::max);
+    assert!((max_x - min_x - 0.097).abs() < 1e-4);
 }
