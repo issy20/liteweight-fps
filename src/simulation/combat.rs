@@ -231,7 +231,7 @@ impl Combat {
                 continue;
             }
             for hitbox in bot.hitboxes() {
-                if let Some(d) = hitbox.bounds.ray_distance(origin, direction) {
+                if let Some(d) = hitbox.ray_distance(origin, direction) {
                     if d < distance {
                         distance = d;
                         impact = true;
@@ -269,29 +269,158 @@ impl Combat {
         walls: &[Aabb],
         damage: u32,
     ) -> Shot {
+        self.shoot_from_muzzle_with_aim(
+            camera_origin,
+            muzzle_origin,
+            aim_direction,
+            aim_direction,
+            walls,
+            damage,
+        )
+    }
+
+    /// Only damages a target selected by the reticle ray and physically intersected by the shot.
+    pub fn shoot_from_muzzle_with_aim(
+        &mut self,
+        camera_origin: Vec3,
+        muzzle_origin: Vec3,
+        aim_direction: Vec3,
+        shot_direction: Vec3,
+        walls: &[Aabb],
+        damage: u32,
+    ) -> Shot {
         let aim_direction = aim_direction.normalize_or_zero();
+        let shot_direction = shot_direction.normalize_or_zero();
         let mut aim_distance: f32 = 100.0;
+        let mut aimed_target = None;
+        let mut aim_blocked_by_wall = false;
         for wall in walls {
             if let Some(distance) = wall.ray_distance(camera_origin, aim_direction) {
-                aim_distance = aim_distance.min(distance);
+                if distance < aim_distance {
+                    aim_distance = distance;
+                    aimed_target = None;
+                    aim_blocked_by_wall = true;
+                }
             }
         }
-        for bot in &self.targets {
+        for (index, bot) in self.targets.iter().enumerate() {
             if bot.alive {
                 for hitbox in bot.hitboxes() {
-                    if let Some(distance) = hitbox.bounds.ray_distance(camera_origin, aim_direction)
-                    {
-                        aim_distance = aim_distance.min(distance);
+                    if let Some(distance) = hitbox.ray_distance(camera_origin, aim_direction) {
+                        if distance < aim_distance {
+                            aim_distance = distance;
+                            aimed_target = Some(index);
+                            aim_blocked_by_wall = false;
+                        }
                     }
                 }
             }
         }
-        let aim_point = camera_origin + aim_direction * aim_distance;
-        self.shoot(
-            muzzle_origin,
-            (aim_point - muzzle_origin).normalize_or_zero(),
-            walls,
-            damage,
-        )
+        let endpoint_direction = if aim_blocked_by_wall {
+            aim_direction
+        } else {
+            shot_direction
+        };
+        let aim_point = camera_origin + endpoint_direction * aim_distance;
+        let muzzle_delta = aim_point - muzzle_origin;
+        let muzzle_distance = muzzle_delta.length();
+        let muzzle_direction = muzzle_delta.normalize_or_zero();
+
+        let wall_hit = walls
+            .iter()
+            .filter_map(|wall| wall.ray_distance(muzzle_origin, muzzle_direction))
+            .filter(|distance| *distance < muzzle_distance - 1e-3)
+            .min_by(f32::total_cmp);
+        let physical_target_hit = self
+            .targets
+            .iter()
+            .enumerate()
+            .filter(|(_, bot)| bot.alive)
+            .flat_map(|(index, bot)| {
+                bot.hitboxes().into_iter().filter_map(move |hitbox| {
+                    hitbox
+                        .ray_distance(muzzle_origin, muzzle_direction)
+                        .filter(|distance| *distance <= muzzle_distance + 1e-3)
+                        .map(|distance| (distance, index, hitbox.headshot))
+                })
+            })
+            .min_by(|a, b| a.0.total_cmp(&b.0));
+
+        let mut shot = if aim_blocked_by_wall {
+            Shot {
+                position: aim_point,
+                impact: true,
+                ..Shot::default()
+            }
+        } else if let Some((wall_distance, target_hit)) = wall_hit.zip(physical_target_hit) {
+            if wall_distance <= target_hit.0 {
+                Shot {
+                    position: muzzle_origin + muzzle_direction * wall_distance,
+                    impact: true,
+                    ..Shot::default()
+                }
+            } else {
+                self.finish_muzzle_hit(
+                    aimed_target,
+                    target_hit,
+                    muzzle_origin,
+                    muzzle_direction,
+                    damage,
+                )
+            }
+        } else if let Some(distance) = wall_hit {
+            Shot {
+                position: muzzle_origin + muzzle_direction * distance,
+                impact: true,
+                ..Shot::default()
+            }
+        } else if let Some(target_hit) = physical_target_hit {
+            self.finish_muzzle_hit(
+                aimed_target,
+                target_hit,
+                muzzle_origin,
+                muzzle_direction,
+                damage,
+            )
+        } else {
+            Shot {
+                position: aim_point,
+                ..Shot::default()
+            }
+        };
+        if aim_blocked_by_wall {
+            shot.position = aim_point;
+            shot.impact = true;
+        }
+        self.shots += 1;
+        self.last_shot = shot;
+        self.feedback = 0.12;
+        shot
+    }
+
+    fn finish_muzzle_hit(
+        &mut self,
+        aimed_target: Option<usize>,
+        target_hit: (f32, usize, bool),
+        muzzle_origin: Vec3,
+        muzzle_direction: Vec3,
+        damage: u32,
+    ) -> Shot {
+        let (distance, index, headshot) = target_hit;
+        let selected_by_reticle = aimed_target == Some(index);
+        let mut shot = Shot {
+            position: muzzle_origin + muzzle_direction * distance,
+            impact: selected_by_reticle,
+            ..Shot::default()
+        };
+        if selected_by_reticle {
+            shot.hit = true;
+            shot.headshot = headshot;
+            shot.killed = self.targets[index].apply_damage(damage * if headshot { 2 } else { 1 });
+            self.hits += 1;
+            self.headshots += u32::from(headshot);
+            self.kills += u32::from(shot.killed);
+        }
+        shot
     }
 }

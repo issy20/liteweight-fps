@@ -260,14 +260,17 @@ fn bot_render_mesh_is_a_faceless_mannequin_with_clear_head_accent() {
         "BOT height should remain unchanged"
     );
 
-    // Rendering detail must not expand or replace the torso/head hitboxes.
+    // Torso and head hitbox bounds follow the visible mannequin proportions.
     assert_eq!(
         combat.targets[0].hitboxes()[0].bounds,
         Aabb::new(Vec3::new(-0.24, 0.96, -5.15), Vec3::new(0.24, 1.67, -4.85))
     );
     assert_eq!(
         combat.targets[0].hitboxes()[5].bounds,
-        Aabb::new(Vec3::new(-0.09, 1.77, -5.09), Vec3::new(0.09, 2.03, -4.91))
+        Aabb::new(
+            Vec3::new(-0.085, 1.77, -5.082),
+            Vec3::new(0.085, 2.03, -4.918)
+        )
     );
 }
 
@@ -349,6 +352,33 @@ fn hitscan_does_not_hit_in_the_small_neck_gap_between_torso_and_head() {
 }
 
 #[test]
+fn hitscan_does_not_hit_empty_space_outside_the_rendered_shoulder() {
+    let mut combat = Combat::new(vec![Bot::new(Vec3::new(0.0, 0.0, -5.0))]);
+    let shot = combat.shoot(
+        Vec3::new(0.0, 1.58, 0.0),
+        Vec3::new(-0.08, 0.0, -1.0),
+        &[],
+        25,
+    );
+
+    assert!(!shot.hit, "the ray passes beside the visible shoulder");
+    assert_eq!(combat.targets[0].hp, 100);
+}
+
+#[test]
+fn hitscan_does_not_hit_outside_the_narrow_torso_waist() {
+    let mut combat = Combat::new(vec![Bot::new(Vec3::new(0.0, 0.0, -5.0))]);
+    let direction = Vec3::new(0.15 / 4.85, 0.0, -1.0);
+    let shot = combat.shoot(Vec3::new(0.0, 1.17, 0.0), direction, &[], 25);
+
+    assert!(
+        !shot.hit,
+        "the ray passes outside the visible waist contour"
+    );
+    assert_eq!(combat.targets[0].hp, 100);
+}
+
+#[test]
 fn muzzle_shot_converges_on_camera_aim_and_still_respects_cover() {
     let mut combat = Combat::new(vec![Bot::new(Vec3::new(0.0, 0.0, -5.0))]);
     let corrected = combat.shoot_from_muzzle(
@@ -375,6 +405,40 @@ fn muzzle_shot_converges_on_camera_aim_and_still_respects_cover() {
         !blocked.hit,
         "the camera aim point must not let muzzle shots pass cover"
     );
+}
+
+#[test]
+fn muzzle_parallax_cannot_damage_a_bot_outside_the_reticle_ray() {
+    let mut combat = Combat::new(vec![Bot::new(Vec3::new(0.5, 0.0, -5.0))]);
+    let shot = combat.shoot_from_muzzle(
+        Vec3::new(0.0, 1.4, 0.0),
+        Vec3::new(0.3, 1.2, 0.4),
+        -Vec3::Z,
+        &[],
+        25,
+    );
+
+    assert!(!shot.hit && !shot.impact, "the reticle ray misses this BOT");
+    assert_eq!(combat.targets[0].hp, 100);
+}
+
+#[test]
+fn shot_spread_cannot_select_a_bot_that_the_reticle_misses() {
+    let mut combat = Combat::new(vec![Bot::new(Vec3::new(0.5, 0.0, -5.0))]);
+    let shot = combat.shoot_from_muzzle_with_aim(
+        Vec3::new(0.0, 1.4, 0.0),
+        Vec3::new(0.3, 1.2, 0.4),
+        -Vec3::Z,
+        Vec3::new(0.03, 0.0, -1.0),
+        &[],
+        25,
+    );
+
+    assert!(
+        !shot.hit && !shot.impact,
+        "spread may miss an aimed BOT but cannot choose another"
+    );
+    assert_eq!(combat.targets[0].hp, 100);
 }
 
 #[test]

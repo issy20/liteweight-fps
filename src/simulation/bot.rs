@@ -22,6 +22,30 @@ pub enum BotBehavior {
 pub struct BotHitbox {
     pub bounds: Aabb,
     pub headshot: bool,
+    shape: HitboxShape,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum HitboxShape {
+    Ellipsoid { center: Vec3, radii: Vec3 },
+    Capsule { start: Vec3, end: Vec3, radius: f32 },
+    LoftedTorso { position: Vec3 },
+}
+
+impl BotHitbox {
+    pub fn ray_distance(&self, origin: Vec3, direction: Vec3) -> Option<f32> {
+        match self.shape {
+            HitboxShape::Ellipsoid { center, radii } => {
+                ray_ellipsoid_distance(origin, direction, center, radii)
+            }
+            HitboxShape::Capsule { start, end, radius } => {
+                ray_capsule_distance(origin, direction, start, end, radius)
+            }
+            HitboxShape::LoftedTorso { position } => {
+                ray_torso_distance(origin, direction, position)
+            }
+        }
+    }
 }
 
 pub struct Bot {
@@ -74,41 +98,80 @@ impl Bot {
         }
     }
 
-    pub fn hitboxes(&self) -> [BotHitbox; 6] {
-        let region = |min: Vec3, max: Vec3, headshot| BotHitbox {
+    pub fn hitboxes(&self) -> [BotHitbox; 8] {
+        let capsule = |min: Vec3, max: Vec3, start: Vec3, end: Vec3, radius| BotHitbox {
             bounds: Aabb::new(self.position + min, self.position + max),
+            headshot: false,
+            shape: HitboxShape::Capsule {
+                start: self.position + start,
+                end: self.position + end,
+                radius,
+            },
+        };
+        let ellipsoid = |center: Vec3, radii: Vec3, headshot| BotHitbox {
+            bounds: Aabb::new(
+                self.position + center - radii,
+                self.position + center + radii,
+            ),
             headshot,
+            shape: HitboxShape::Ellipsoid {
+                center: self.position + center,
+                radii,
+            },
         };
         [
-            region(
-                Vec3::new(-0.24, 0.96, -0.15),
-                Vec3::new(0.24, 1.67, 0.15),
-                false,
-            ),
-            region(
+            BotHitbox {
+                bounds: Aabb::new(
+                    self.position + Vec3::new(-0.24, 0.96, -0.15),
+                    self.position + Vec3::new(0.24, 1.67, 0.15),
+                ),
+                headshot: false,
+                shape: HitboxShape::LoftedTorso {
+                    position: self.position,
+                },
+            },
+            capsule(
                 Vec3::new(-0.42, 0.67, -0.12),
                 Vec3::new(-0.12, 1.60, 0.12),
-                false,
+                Vec3::new(-0.20, 1.52, 0.0),
+                Vec3::new(-0.34, 0.77, 0.04),
+                0.08,
             ),
-            region(
+            capsule(
                 Vec3::new(0.12, 0.67, -0.12),
                 Vec3::new(0.42, 1.60, 0.12),
-                false,
+                Vec3::new(0.20, 1.52, 0.0),
+                Vec3::new(0.34, 0.77, 0.04),
+                0.08,
             ),
-            region(
+            capsule(
                 Vec3::new(-0.24, 0.0, -0.18),
                 Vec3::new(-0.03, 1.02, 0.18),
-                false,
+                Vec3::new(-0.105, 0.96, 0.0),
+                Vec3::new(-0.14, 0.12, 0.015),
+                0.11,
             ),
-            region(
+            capsule(
                 Vec3::new(0.03, 0.0, -0.18),
                 Vec3::new(0.24, 1.02, 0.18),
+                Vec3::new(0.105, 0.96, 0.0),
+                Vec3::new(0.14, 0.12, 0.015),
+                0.11,
+            ),
+            ellipsoid(
+                Vec3::new(0.0, 1.90, 0.0),
+                Vec3::new(0.085, 0.13, 0.082),
+                true,
+            ),
+            ellipsoid(
+                Vec3::new(-0.14, 0.045, 0.085),
+                Vec3::new(0.075, 0.045, 0.17),
                 false,
             ),
-            region(
-                Vec3::new(-0.09, 1.77, -0.09),
-                Vec3::new(0.09, 2.03, 0.09),
-                true,
+            ellipsoid(
+                Vec3::new(0.14, 0.045, 0.085),
+                Vec3::new(0.075, 0.045, 0.17),
+                false,
             ),
         ]
     }
@@ -256,6 +319,191 @@ impl Bot {
         self.chase_waypoint = 0;
         self.move_direction = Vec3::ZERO;
     }
+}
+
+const TORSO_PROFILE: [(f32, f32, f32); 6] = [
+    (0.96, 0.16, 0.12),
+    (1.06, 0.19, 0.135),
+    (1.17, 0.14, 0.112),
+    (1.38, 0.21, 0.15),
+    (1.50, 0.24, 0.14),
+    (1.67, 0.16, 0.10),
+];
+const TORSO_RING_POINTS: [Vec3; 6] = [
+    Vec3::new(1.0, 0.0, 0.0),
+    Vec3::new(0.5, 0.0, 0.866_025_4),
+    Vec3::new(-0.5, 0.0, 0.866_025_4),
+    Vec3::new(-1.0, 0.0, 0.0),
+    Vec3::new(-0.5, 0.0, -0.866_025_4),
+    Vec3::new(0.5, 0.0, -0.866_025_4),
+];
+
+fn ray_torso_distance(origin: Vec3, direction: Vec3, position: Vec3) -> Option<f32> {
+    if !origin.is_finite() || !direction.is_finite() || direction.length_squared() < 1e-12 {
+        return None;
+    }
+    let direction = direction.normalize();
+    let vertex = |ring: usize, side: usize| {
+        let (y, radius_x, radius_z) = TORSO_PROFILE[ring];
+        let point = TORSO_RING_POINTS[side];
+        position + Vec3::new(point.x * radius_x, y, point.z * radius_z)
+    };
+    let bottom = position + Vec3::new(0.0, TORSO_PROFILE[0].0, 0.0);
+    let top = position + Vec3::new(0.0, TORSO_PROFILE[TORSO_PROFILE.len() - 1].0, 0.0);
+    let mut closest = None;
+
+    for ring in 0..(TORSO_PROFILE.len() - 1) {
+        for side in 0..TORSO_RING_POINTS.len() {
+            let next = (side + 1) % TORSO_RING_POINTS.len();
+            let lower = vertex(ring, side);
+            let lower_next = vertex(ring, next);
+            let upper = vertex(ring + 1, side);
+            let upper_next = vertex(ring + 1, next);
+            for distance in [
+                ray_triangle_distance(origin, direction, lower, lower_next, upper_next),
+                ray_triangle_distance(origin, direction, lower, upper_next, upper),
+            ]
+            .into_iter()
+            .flatten()
+            {
+                closest = Some(closest.map_or(distance, |current: f32| current.min(distance)));
+            }
+        }
+    }
+
+    for side in 0..TORSO_RING_POINTS.len() {
+        let next = (side + 1) % TORSO_RING_POINTS.len();
+        for distance in [
+            ray_triangle_distance(origin, direction, bottom, vertex(0, next), vertex(0, side)),
+            ray_triangle_distance(
+                origin,
+                direction,
+                top,
+                vertex(TORSO_PROFILE.len() - 1, side),
+                vertex(TORSO_PROFILE.len() - 1, next),
+            ),
+        ]
+        .into_iter()
+        .flatten()
+        {
+            closest = Some(closest.map_or(distance, |current: f32| current.min(distance)));
+        }
+    }
+    closest
+}
+
+fn ray_triangle_distance(origin: Vec3, direction: Vec3, a: Vec3, b: Vec3, c: Vec3) -> Option<f32> {
+    let edge_ab = b - a;
+    let edge_ac = c - a;
+    let p = direction.cross(edge_ac);
+    let determinant = edge_ab.dot(p);
+    if determinant.abs() < 1e-8 {
+        return None;
+    }
+    let inverse_determinant = determinant.recip();
+    let from_a = origin - a;
+    let u = from_a.dot(p) * inverse_determinant;
+    if !(0.0..=1.0).contains(&u) {
+        return None;
+    }
+    let q = from_a.cross(edge_ab);
+    let v = direction.dot(q) * inverse_determinant;
+    if v < 0.0 || u + v > 1.0 {
+        return None;
+    }
+    let distance = edge_ac.dot(q) * inverse_determinant;
+    (distance >= 0.0).then_some(distance)
+}
+
+fn ray_ellipsoid_distance(origin: Vec3, direction: Vec3, center: Vec3, radii: Vec3) -> Option<f32> {
+    if !origin.is_finite()
+        || !direction.is_finite()
+        || direction.length_squared() < 1e-12
+        || radii.min_element() <= 0.0
+    {
+        return None;
+    }
+    let direction = direction.normalize();
+    let relative_origin = (origin - center) / radii;
+    let scaled_direction = direction / radii;
+    let a = scaled_direction.length_squared();
+    let b = relative_origin.dot(scaled_direction);
+    let c = relative_origin.length_squared() - 1.0;
+    if c <= 0.0 {
+        return Some(0.0);
+    }
+    let discriminant = b * b - a * c;
+    if discriminant < 0.0 {
+        return None;
+    }
+    let root = discriminant.sqrt();
+    let near = (-b - root) / a;
+    if near >= 0.0 {
+        Some(near)
+    } else {
+        let far = (-b + root) / a;
+        (far >= 0.0).then_some(far)
+    }
+}
+
+fn ray_capsule_distance(
+    origin: Vec3,
+    direction: Vec3,
+    start: Vec3,
+    end: Vec3,
+    radius: f32,
+) -> Option<f32> {
+    if !origin.is_finite()
+        || !direction.is_finite()
+        || direction.length_squared() < 1e-12
+        || !radius.is_finite()
+        || radius <= 0.0
+    {
+        return None;
+    }
+    let direction = direction.normalize();
+    let axis = end - start;
+    let axis_length_sq = axis.length_squared();
+    if axis_length_sq < 1e-12 {
+        return ray_ellipsoid_distance(origin, direction, start, Vec3::splat(radius));
+    }
+
+    let from_start = origin - start;
+    let axis_dot_direction = axis.dot(direction);
+    let axis_dot_origin = axis.dot(from_start);
+    let direction_dot_origin = direction.dot(from_start);
+    let origin_length_sq = from_start.length_squared();
+    let quadratic_a = axis_length_sq - axis_dot_direction * axis_dot_direction;
+    let quadratic_b = axis_length_sq * direction_dot_origin - axis_dot_origin * axis_dot_direction;
+    let quadratic_c = axis_length_sq * origin_length_sq
+        - axis_dot_origin * axis_dot_origin
+        - radius * radius * axis_length_sq;
+    let discriminant = quadratic_b * quadratic_b - quadratic_a * quadratic_c;
+
+    let cylinder_hit = if quadratic_a > 1e-12 && discriminant >= 0.0 {
+        let root = discriminant.sqrt();
+        [
+            (-quadratic_b - root) / quadratic_a,
+            (-quadratic_b + root) / quadratic_a,
+        ]
+        .into_iter()
+        .filter(|distance| *distance >= 0.0)
+        .filter(|distance| {
+            let along_axis = axis_dot_origin + *distance * axis_dot_direction;
+            (0.0..=axis_length_sq).contains(&along_axis)
+        })
+        .min_by(f32::total_cmp)
+    } else {
+        None
+    };
+    [
+        cylinder_hit,
+        ray_ellipsoid_distance(origin, direction, start, Vec3::splat(radius)),
+        ray_ellipsoid_distance(origin, direction, end, Vec3::splat(radius)),
+    ]
+    .into_iter()
+    .flatten()
+    .min_by(f32::total_cmp)
 }
 
 pub fn horizontal_distance(a: Vec3, b: Vec3) -> f32 {

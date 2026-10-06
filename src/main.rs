@@ -78,7 +78,7 @@ impl App {
         {
             return;
         }
-        let direction =
+        let shot_direction =
             self.weapons
                 .active()
                 .spread_direction(view_direction, moving, self.combat.shots);
@@ -86,10 +86,11 @@ impl App {
             .weapons
             .active()
             .muzzle_position(self.player.position, view_direction);
-        let shot = self.combat.shoot_from_muzzle(
+        let shot = self.combat.shoot_from_muzzle_with_aim(
             self.player.position,
             muzzle,
-            direction,
+            view_direction,
+            shot_direction,
             &self.colliders,
             damage,
         );
