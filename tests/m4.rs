@@ -18,8 +18,8 @@ fn loadout_starts_with_ar_and_keeps_magazines_per_weapon() {
 
 #[test]
 fn ar_and_pistol_ads_use_a_less_magnified_view_than_the_initial_tuning() {
-    assert_eq!(WeaponKind::AssaultRifle.fov(1.0), 60.0);
-    assert_eq!(WeaponKind::Pistol.fov(1.0), 62.0);
+    assert_eq!(WeaponKind::AssaultRifle.fov(1.0), 65.0);
+    assert_eq!(WeaponKind::Pistol.fov(1.0), 67.0);
     assert_eq!(WeaponKind::Sniper.fov(1.0), 32.0);
 }
 

@@ -159,8 +159,8 @@ fn configured_fov_applies_to_hip_view_and_blends_into_weapon_ads_fov() {
     };
     let loadout = liteweight_fps::simulation::weapon::Loadout::default();
     assert_eq!(loadout.active_kind().fov_with_base(settings.fov, 0.0), 90.0);
-    assert_eq!(loadout.active_kind().fov_with_base(settings.fov, 1.0), 60.0);
-    assert_eq!(loadout.active_kind().fov_with_base(settings.fov, 0.5), 75.0);
+    assert_eq!(loadout.active_kind().fov_with_base(settings.fov, 1.0), 65.0);
+    assert_eq!(loadout.active_kind().fov_with_base(settings.fov, 0.5), 77.5);
 }
 
 #[test]

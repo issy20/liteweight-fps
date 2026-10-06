@@ -26,8 +26,8 @@ impl WeaponKind {
     }
     pub fn fov_with_base(self, base_fov: f32, ads_progress: f32) -> f32 {
         let ads_fov = match self {
-            Self::Pistol => 62.,
-            Self::AssaultRifle => 60.,
+            Self::Pistol => 67.,
+            Self::AssaultRifle => 65.,
             Self::Sniper => 32.,
         };
         let progress = ads_progress.clamp(0.0, 1.0);
