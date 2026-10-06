@@ -1,5 +1,4 @@
 [idea] BOTの数とmapの大きさをスケールさせる
-[feedback] ADSしていない時の弾が真っ直ぐ飛ばないように乱数をつける
 [idea] tracking aimがより楽しめるような仕様にする
 [feedback] レティクルで弾が銃の先端(等身)から発射されるようにする
 [feedback] 銃のモデリングを刷新する
