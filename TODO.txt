@@ -1,2 +1,2 @@
 [idea] tracking aimがより楽しめるような仕様にする
-[feedback] 壁と障害物の高さを上げる
+[feedback] 銃のモデリングを刷新する
