@@ -366,20 +366,24 @@ fn rect_alpha(mesh: &mut Scene, x: f32, y: f32, w: f32, h: f32, color: [f32; 4],
         .extend([base, base + 1, base + 2, base, base + 2, base + 3]);
 }
 
-fn scope_model_ring(mesh: &mut Scene, center: Vec2, aspect: f32, opacity: f32) {
+fn scope_model_ring(mesh: &mut Scene, center: Vec2, aspect: f32, progress: f32, opacity: f32) {
     const SEGMENTS: usize = 12;
-    const INNER_RADIUS: f32 = 0.035;
-    const OUTER_RADIUS: f32 = 0.05;
+    const INITIAL_OUTER_RADIUS: f32 = 0.05;
+    const INITIAL_INNER_RADIUS: f32 = 0.035;
+    let progress = progress.clamp(0.0, 1.0);
+    let eased = progress * progress * (3.0 - 2.0 * progress);
+    let outer_radius = INITIAL_OUTER_RADIUS + (SCOPE_MAX_RADIUS - INITIAL_OUTER_RADIUS) * eased;
+    let inner_radius = INITIAL_INNER_RADIUS + (outer_radius - INITIAL_INNER_RADIUS) * eased;
     let color = [0.18, 0.21, 0.23, opacity];
     for segment in 0..SEGMENTS {
         let angle0 = segment as f32 * std::f32::consts::TAU / SEGMENTS as f32;
         let angle1 = (segment + 1) as f32 * std::f32::consts::TAU / SEGMENTS as f32;
         let base = mesh.vertices.len() as u16;
         for (angle, radius) in [
-            (angle0, OUTER_RADIUS),
-            (angle0, INNER_RADIUS),
-            (angle1, INNER_RADIUS),
-            (angle1, OUTER_RADIUS),
+            (angle0, outer_radius),
+            (angle0, inner_radius),
+            (angle1, inner_radius),
+            (angle1, outer_radius),
         ] {
             mesh.vertices.push(Vertex {
                 position: [
@@ -1092,6 +1096,15 @@ const SCOPE_RING_SEGMENTS: usize = 32;
 const SCOPE_TICK_SIZE_RATIO: f32 = 0.018;
 const SCOPE_RETICLE_ARM: f32 = 0.07;
 const SCOPE_RETICLE_LINE_RATIO: f32 = 0.0015;
+const SCOPE_REFLECTION_SEGMENTS: usize = 16;
+const SCOPE_REFLECTION_MAX_OPACITY: f32 = 0.055;
+const SCOPE_GLASS_HAZE_SEGMENTS: usize = 32;
+const SCOPE_GLASS_HAZE_MAX_OPACITY: f32 = 1.0;
+const SCOPE_GLASS_HAZE_MIN_RADIUS: f32 = 0.055;
+const SCOPE_GLASS_CLEAR_START_PROGRESS: f32 = 0.18;
+const SCOPE_GLASS_CLEAR_END_PROGRESS: f32 = 0.82;
+const SCOPE_GLASS_HAZE_CENTER_COLOR: [f32; 3] = [0.98, 0.96, 0.88];
+const SCOPE_GLASS_HAZE_EDGE_COLOR: [f32; 3] = [0.68, 0.82, 0.90];
 const PERIPHERAL_DARKEN_START: f32 = 0.3;
 const PERIPHERAL_DARKEN_CURVE: f32 = 1.5;
 const PERIPHERAL_MAX_OPACITY: f32 = 0.98;
@@ -1265,12 +1278,151 @@ fn push_scope_mask_quad(mesh: &mut Scene, points: [[f32; 2]; 4], opacity: [f32; 
         .extend([base, base + 1, base + 2, base, base + 2, base + 3]);
 }
 
+fn scope_glass_reflection(mesh: &mut Scene, aspect: f32, state: ScopeVisualState, progress: f32) {
+    let progress = progress.clamp(0.0, 1.0);
+    let envelope = 4.0 * progress * (1.0 - progress);
+    if envelope <= f32::EPSILON || state.aperture_radius <= f32::EPSILON {
+        return;
+    }
+
+    let radius = state.aperture_radius;
+    let center_x = state.center_x - radius * 0.14;
+    let center_y = state.center_y + radius * 0.12;
+    let radius_x = radius * 0.34;
+    let radius_y = radius * 0.12;
+    let rotation = -0.45_f32;
+    let opacity = SCOPE_REFLECTION_MAX_OPACITY * envelope;
+    let color = [0.78, 0.88, 0.92];
+    let point = |angle: f32, scale: f32| {
+        let x = angle.cos() * radius_x * scale;
+        let y = angle.sin() * radius_y * scale;
+        [
+            (center_x + x * rotation.cos() - y * rotation.sin()) / aspect,
+            center_y + x * rotation.sin() + y * rotation.cos(),
+        ]
+    };
+
+    for i in 0..SCOPE_REFLECTION_SEGMENTS {
+        let angle0 = i as f32 * std::f32::consts::TAU / SCOPE_REFLECTION_SEGMENTS as f32;
+        let angle1 = (i + 1) as f32 * std::f32::consts::TAU / SCOPE_REFLECTION_SEGMENTS as f32;
+        let inner0 = point(angle0, 0.45);
+        let inner1 = point(angle1, 0.45);
+        let outer0 = point(angle0, 1.0);
+        let outer1 = point(angle1, 1.0);
+        push_scope_reflection_triangle(
+            mesh,
+            [center_x / aspect, center_y],
+            inner0,
+            inner1,
+            color,
+            [opacity; 3],
+        );
+        push_scope_reflection_quad(
+            mesh,
+            [inner0, outer0, outer1, inner1],
+            color,
+            [opacity, 0.0, 0.0, opacity],
+        );
+    }
+}
+
+fn scope_glass_haze(mesh: &mut Scene, aspect: f32, state: ScopeVisualState, progress: f32) {
+    let progress = progress.clamp(0.0, 1.0);
+    let rise = smoothstep(progress / 0.035);
+    let clear = 1.0
+        - smoothstep(
+            (progress - SCOPE_GLASS_CLEAR_START_PROGRESS)
+                / (SCOPE_GLASS_CLEAR_END_PROGRESS - SCOPE_GLASS_CLEAR_START_PROGRESS),
+        );
+    let opacity = SCOPE_GLASS_HAZE_MAX_OPACITY * rise * clear;
+    if opacity <= f32::EPSILON || state.aperture_radius <= f32::EPSILON {
+        return;
+    }
+
+    let center = [state.center_x / aspect, state.center_y];
+    let radius = state.aperture_radius.max(SCOPE_GLASS_HAZE_MIN_RADIUS);
+    for i in 0..SCOPE_GLASS_HAZE_SEGMENTS {
+        let angle0 = i as f32 * std::f32::consts::TAU / SCOPE_GLASS_HAZE_SEGMENTS as f32;
+        let angle1 = (i + 1) as f32 * std::f32::consts::TAU / SCOPE_GLASS_HAZE_SEGMENTS as f32;
+        let at_angle = |angle: f32| {
+            [
+                (state.center_x + angle.cos() * radius) / aspect,
+                state.center_y + angle.sin() * radius,
+            ]
+        };
+        push_scope_glass_triangle(mesh, center, at_angle(angle0), at_angle(angle1), opacity);
+    }
+}
+
+fn push_scope_glass_triangle(
+    mesh: &mut Scene,
+    center: [f32; 2],
+    point0: [f32; 2],
+    point1: [f32; 2],
+    opacity: f32,
+) {
+    let base = mesh.vertices.len() as u16;
+    for (position, color) in [
+        (center, SCOPE_GLASS_HAZE_CENTER_COLOR),
+        (point0, SCOPE_GLASS_HAZE_EDGE_COLOR),
+        (point1, SCOPE_GLASS_HAZE_EDGE_COLOR),
+    ] {
+        mesh.vertices.push(Vertex {
+            position: [position[0], position[1], 0.0],
+            color: [color[0], color[1], color[2], opacity],
+        });
+    }
+    mesh.indices.extend([base, base + 1, base + 2]);
+}
+
+fn smoothstep(value: f32) -> f32 {
+    let value = value.clamp(0.0, 1.0);
+    value * value * (3.0 - 2.0 * value)
+}
+
+fn push_scope_reflection_triangle(
+    mesh: &mut Scene,
+    center: [f32; 2],
+    point0: [f32; 2],
+    point1: [f32; 2],
+    color: [f32; 3],
+    alpha: [f32; 3],
+) {
+    let base = mesh.vertices.len() as u16;
+    for (position, opacity) in [center, point0, point1].into_iter().zip(alpha) {
+        mesh.vertices.push(Vertex {
+            position: [position[0], position[1], 0.0],
+            color: [color[0], color[1], color[2], opacity],
+        });
+    }
+    mesh.indices.extend([base, base + 1, base + 2]);
+}
+
+fn push_scope_reflection_quad(
+    mesh: &mut Scene,
+    points: [[f32; 2]; 4],
+    color: [f32; 3],
+    alpha: [f32; 4],
+) {
+    let base = mesh.vertices.len() as u16;
+    for (position, opacity) in points.into_iter().zip(alpha) {
+        mesh.vertices.push(Vertex {
+            position: [position[0], position[1], 0.0],
+            color: [color[0], color[1], color[2], opacity],
+        });
+    }
+    mesh.indices
+        .extend([base, base + 1, base + 2, base, base + 2, base + 3]);
+}
+
 fn scope_picture(mesh: &mut Scene, aspect: f32, progress: f32, sight_center: Vec2) {
     let state = ScopeVisualState::from_progress(progress, sight_center);
     if state.aperture_radius == 0.0 {
         return;
     }
     scope_shadow(mesh, aspect, state);
+    scope_glass_haze(mesh, aspect, state, progress);
+    scope_glass_reflection(mesh, aspect, state, progress);
     let radius = state.aperture_radius;
     let tick = radius * SCOPE_TICK_SIZE_RATIO;
     for i in 0..SCOPE_RING_SEGMENTS {
@@ -1448,9 +1600,17 @@ pub fn hud_mesh_with_menu(
                     color,
                     aspect,
                 );
-                let scope_rim_opacity = 1.0 - weapon.ads_progress.clamp(0.0, 1.0);
+                let progress = weapon.ads_progress.clamp(0.0, 1.0);
+                let eased = progress * progress * (3.0 - 2.0 * progress);
+                let scope_rim_opacity = 1.0 - eased;
                 if scope_rim_opacity > f32::EPSILON {
-                    scope_model_ring(&mut m, layout.sight_screen, aspect, scope_rim_opacity);
+                    scope_model_ring(
+                        &mut m,
+                        layout.sight_screen,
+                        aspect,
+                        progress,
+                        scope_rim_opacity,
+                    );
                 }
             }
         }

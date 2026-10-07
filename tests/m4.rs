@@ -254,6 +254,70 @@ fn sniper_ads_reticle_stays_compact_and_thin() {
 }
 
 #[test]
+fn sniper_scope_glass_reflection_fades_in_and_out_during_ads() {
+    let mut loadout = Loadout::default();
+    loadout.switch(WeaponKind::Sniper);
+    loadout.advance(0.32, false);
+    let combat = liteweight_fps::simulation::combat::Combat::default();
+    let glass_opacity = |progress: f32, loadout: &mut Loadout| {
+        loadout.active_mut().ads_progress = progress;
+        liteweight_fps::ui::hud_mesh(loadout.active(), &combat, 16.0 / 9.0, 0.0)
+            .vertices
+            .into_iter()
+            .filter(|vertex| {
+                vertex.color[..3] == [0.98, 0.96, 0.88] || vertex.color[..3] == [0.68, 0.82, 0.90]
+            })
+            .map(|vertex| vertex.color[3])
+            .fold(0.0, f32::max)
+    };
+    let beginning = glass_opacity(0.0, &mut loadout);
+    let early = glass_opacity(0.08, &mut loadout);
+    let middle = glass_opacity(0.3, &mut loadout);
+    let late = glass_opacity(0.55, &mut loadout);
+    let clear = glass_opacity(0.82, &mut loadout);
+    let fully_aimed = glass_opacity(1.0, &mut loadout);
+    assert_eq!(beginning, 0.0);
+    assert!(
+        early >= 0.8,
+        "initial glass reflection must obscure the scope view: {early}"
+    );
+    assert!(middle < early, "reflection should clear as ADS progresses");
+    assert!(late > 0.0, "reflection should remain visible for longer");
+    assert_eq!(clear, 0.0);
+    assert_eq!(fully_aimed, 0.0);
+
+    loadout.active_mut().ads_progress = 0.08;
+    let aspect = 16.0 / 9.0;
+    let layout = loadout.active().view_model_layout(0.0);
+    let lens_vertices: Vec<_> =
+        liteweight_fps::ui::hud_mesh(loadout.active(), &combat, aspect, 0.0)
+            .vertices
+            .into_iter()
+            .filter(|vertex| {
+                vertex.color[..3] == [0.98, 0.96, 0.88] || vertex.color[..3] == [0.68, 0.82, 0.90]
+            })
+            .collect();
+    assert!(lens_vertices.iter().all(|vertex| vertex.color[3] >= 0.99));
+    assert!(lens_vertices
+        .iter()
+        .any(|vertex| vertex.color[..3] == [0.98, 0.96, 0.88]));
+    assert!(lens_vertices
+        .iter()
+        .any(|vertex| vertex.color[..3] == [0.68, 0.82, 0.90]));
+    let lens_radius = lens_vertices
+        .iter()
+        .map(|vertex| {
+            (vertex.position[0] * aspect - layout.sight_screen.x)
+                .hypot(vertex.position[1] - layout.sight_screen.y)
+        })
+        .fold(0.0_f32, f32::max);
+    assert!(
+        lens_radius >= 0.05,
+        "reflection must cover the physical scope lens"
+    );
+}
+
+#[test]
 fn sniper_rifle_model_fades_out_during_ads() {
     let mut loadout = Loadout::default();
     loadout.switch(WeaponKind::Sniper);
@@ -306,6 +370,41 @@ fn sniper_scope_rim_is_a_hollow_circle_when_unscoped() {
             .all(|radius| { (radius - 0.05).abs() < 1e-5 || (radius - 0.035).abs() < 1e-5 }),
         "scope rim vertices must lie on circular inner and outer edges"
     );
+}
+
+#[test]
+fn sniper_scope_lens_moves_to_eye_and_grows_during_ads() {
+    let mut loadout = Loadout::default();
+    loadout.switch(WeaponKind::Sniper);
+    loadout.advance(0.32, false);
+    let combat = liteweight_fps::simulation::combat::Combat::default();
+    let aspect = 16.0 / 9.0;
+    let measure_scope = |progress: f32, loadout: &mut Loadout| {
+        loadout.active_mut().ads_progress = progress;
+        let mesh = liteweight_fps::ui::hud_mesh(loadout.active(), &combat, aspect, 0.0);
+        let vertices: Vec<_> = mesh
+            .vertices
+            .into_iter()
+            .filter(|vertex| vertex.color[..3] == [0.18, 0.21, 0.23] && vertex.color[3] > 0.0)
+            .collect();
+        let center = vertices.iter().fold([0.0, 0.0], |sum, vertex| {
+            [
+                sum[0] + vertex.position[0] * aspect / vertices.len() as f32,
+                sum[1] + vertex.position[1] / vertices.len() as f32,
+            ]
+        });
+        let radius = vertices
+            .iter()
+            .map(|vertex| {
+                (vertex.position[0] * aspect - center[0]).hypot(vertex.position[1] - center[1])
+            })
+            .fold(0.0_f32, f32::max);
+        (center, radius)
+    };
+    let (hip_center, hip_radius) = measure_scope(0.0, &mut loadout);
+    let (raised_center, raised_radius) = measure_scope(0.5, &mut loadout);
+    assert!(raised_center[0].hypot(raised_center[1]) < hip_center[0].hypot(hip_center[1]));
+    assert!(raised_radius > hip_radius * 5.0);
 }
 
 #[test]
@@ -388,7 +487,7 @@ fn sniper_ads_progress_moves_in_and_out_smoothly_without_spread_accuracy_curve()
     loadout.switch(WeaponKind::Sniper);
     loadout.advance(0.32, false);
     let hip = loadout.active().spread(false);
-    loadout.advance(0.175, true);
+    loadout.advance(0.25, true);
     assert!((loadout.active().ads_progress - 0.5).abs() < 1e-5);
     assert_eq!(loadout.active().spread(false), hip);
     loadout.advance(0.1, false);
@@ -406,10 +505,10 @@ fn sniper_shot_direction_converges_to_view_during_ads() {
     loadout.advance(0.32, false);
     let view = Vec3::new(0.0, 0.0, -1.0);
     let hip = loadout.active().shot_direction(view);
-    loadout.advance(0.175, true);
+    loadout.advance(0.25, true);
     let halfway = loadout.active().shot_direction(view);
     assert!(loadout.fire(true, true));
-    loadout.advance(0.175, true);
+    loadout.advance(0.25, true);
     let fully_aimed = loadout.active().shot_direction(view);
 
     assert!((hip - view).length() > 0.01);
@@ -425,7 +524,7 @@ fn sniper_quick_shot_alignment_converges_earlier_than_ads_progress() {
     loadout.switch(WeaponKind::Sniper);
     loadout.advance(0.32, false);
     let view = Vec3::new(0.0, 0.0, -1.0);
-    loadout.advance(0.175, true);
+    loadout.advance(0.25, true);
     let halfway = loadout.active().shot_direction(view);
     let deviation_degrees = halfway.dot(view).clamp(-1.0, 1.0).acos().to_degrees();
     assert!(
@@ -435,14 +534,31 @@ fn sniper_quick_shot_alignment_converges_earlier_than_ads_progress() {
 }
 
 #[test]
-fn sniper_scope_fov_moves_smoothly_from_70_to_20_degrees_over_350ms() {
+fn sniper_quick_shot_alignment_is_usable_before_half_ads() {
+    use glam::Vec3;
+
+    let mut loadout = Loadout::default();
+    loadout.switch(WeaponKind::Sniper);
+    loadout.advance(0.32, false);
+    loadout.advance(0.2, true);
+    let view = Vec3::new(0.0, 0.0, -1.0);
+    let shot = loadout.active().shot_direction(view);
+    let deviation_degrees = shot.dot(view).clamp(-1.0, 1.0).acos().to_degrees();
+    assert!(
+        deviation_degrees <= 1.2,
+        "quick-shot alignment at 40% ADS is {deviation_degrees} degrees"
+    );
+}
+
+#[test]
+fn sniper_scope_fov_moves_smoothly_from_70_to_20_degrees_over_500ms() {
     let mut loadout = Loadout::default();
     loadout.switch(WeaponKind::Sniper);
     loadout.advance(0.32, false);
     assert_eq!(loadout.fov(), 70.);
-    loadout.advance(0.2975, true);
+    loadout.advance(0.425, true);
     assert!((loadout.fov() - 27.5).abs() < 1e-3);
-    loadout.advance(0.0525, true);
+    loadout.advance(0.075, true);
     assert!((loadout.fov() - 20.).abs() < 1e-5);
 }
 

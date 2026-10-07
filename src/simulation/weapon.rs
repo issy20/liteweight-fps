@@ -76,10 +76,10 @@ pub const PISTOL: WeaponData = WeaponData {
     mode: FireMode::SemiAutomatic,
     bolt_seconds: 0.0,
 };
-pub const SNIPER_ADS_IN_SECONDS: f32 = 0.35;
+pub const SNIPER_ADS_IN_SECONDS: f32 = 0.50;
 pub const SNIPER_ADS_OUT_SECONDS: f32 = 0.20;
 const SNIPER_HIP_ALIGNMENT_RADIANS: f32 = 4.0_f32.to_radians();
-const SNIPER_ALIGNMENT_REMAINING_EXPONENT: f32 = 2.0;
+const SNIPER_ALIGNMENT_REMAINING_EXPONENT: f32 = 2.5;
 pub const SNIPER: WeaponData = WeaponData {
     magazine: 5,
     interval: 60. / 50.,
