@@ -28,7 +28,7 @@ impl WeaponKind {
         let ads_fov = match self {
             Self::Pistol => 67.,
             Self::AssaultRifle => 65.,
-            Self::Sniper => 32.,
+            Self::Sniper => 20.,
         };
         let progress = ads_progress.clamp(0.0, 1.0);
         base_fov + (ads_fov - base_fov) * progress
@@ -79,6 +79,7 @@ pub const PISTOL: WeaponData = WeaponData {
 pub const SNIPER_ADS_IN_SECONDS: f32 = 0.35;
 pub const SNIPER_ADS_OUT_SECONDS: f32 = 0.20;
 const SNIPER_HIP_ALIGNMENT_RADIANS: f32 = 4.0_f32.to_radians();
+const SNIPER_ALIGNMENT_REMAINING_EXPONENT: f32 = 2.0;
 pub const SNIPER: WeaponData = WeaponData {
     magazine: 5,
     interval: 60. / 50.,
@@ -169,7 +170,9 @@ impl Weapon {
             return view;
         }
         let right = view.cross(Vec3::Y).normalize_or_zero();
-        (view + right * (SNIPER_HIP_ALIGNMENT_RADIANS.tan() * (1.0 - self.ads_progress)))
+        let remaining_misalignment =
+            (1.0 - self.ads_progress.clamp(0.0, 1.0)).powf(SNIPER_ALIGNMENT_REMAINING_EXPONENT);
+        (view + right * (SNIPER_HIP_ALIGNMENT_RADIANS.tan() * remaining_misalignment))
             .normalize_or_zero()
     }
     /// Reproducible per-shot hip-fire deviation; the sniper keeps its dedicated alignment rule.

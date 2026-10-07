@@ -366,6 +366,35 @@ fn rect_alpha(mesh: &mut Scene, x: f32, y: f32, w: f32, h: f32, color: [f32; 4],
         .extend([base, base + 1, base + 2, base, base + 2, base + 3]);
 }
 
+fn scope_model_ring(mesh: &mut Scene, center: Vec2, aspect: f32, opacity: f32) {
+    const SEGMENTS: usize = 12;
+    const INNER_RADIUS: f32 = 0.035;
+    const OUTER_RADIUS: f32 = 0.05;
+    let color = [0.18, 0.21, 0.23, opacity];
+    for segment in 0..SEGMENTS {
+        let angle0 = segment as f32 * std::f32::consts::TAU / SEGMENTS as f32;
+        let angle1 = (segment + 1) as f32 * std::f32::consts::TAU / SEGMENTS as f32;
+        let base = mesh.vertices.len() as u16;
+        for (angle, radius) in [
+            (angle0, OUTER_RADIUS),
+            (angle0, INNER_RADIUS),
+            (angle1, INNER_RADIUS),
+            (angle1, OUTER_RADIUS),
+        ] {
+            mesh.vertices.push(Vertex {
+                position: [
+                    (center.x + angle.cos() * radius) / aspect,
+                    center.y + angle.sin() * radius,
+                    0.0,
+                ],
+                color,
+            });
+        }
+        mesh.indices
+            .extend([base, base + 1, base + 2, base, base + 2, base + 3]);
+    }
+}
+
 pub fn settings_overlay(
     mesh: &mut Scene,
     settings: &crate::persistence::GameSettings,
@@ -1056,13 +1085,13 @@ fn digit(mesh: &mut Scene, n: u32, x: f32, y: f32, aspect: f32) {
         }
     }
 }
-const SCOPE_MAX_RADIUS: f32 = 0.56;
+const SCOPE_MAX_RADIUS: f32 = 1.90;
 const SCOPE_MAX_SHADOW_WIDTH: f32 = 0.8;
 const SCOPE_SHADOW_SEGMENTS: usize = 24;
 const SCOPE_RING_SEGMENTS: usize = 32;
 const SCOPE_TICK_SIZE_RATIO: f32 = 0.018;
-const SCOPE_RETICLE_ARM_RATIO: f32 = 0.68;
-const SCOPE_RETICLE_LINE_RATIO: f32 = 0.008;
+const SCOPE_RETICLE_ARM: f32 = 0.07;
+const SCOPE_RETICLE_LINE_RATIO: f32 = 0.0015;
 const PERIPHERAL_DARKEN_START: f32 = 0.3;
 const PERIPHERAL_DARKEN_CURVE: f32 = 1.5;
 const PERIPHERAL_MAX_OPACITY: f32 = 0.98;
@@ -1096,6 +1125,7 @@ impl ScopeVisualState {
 
 fn scope_shadow(mesh: &mut Scene, aspect: f32, state: ScopeVisualState) {
     let inner = state.aperture_radius;
+    let shadow_outer = inner + state.shadow_width;
     let shadow_peak_width = SCOPE_MAX_SHADOW_WIDTH * 0.25;
     let inner_opacity =
         SCOPE_SHADOW_PEAK_ALPHA * (state.shadow_width / shadow_peak_width).clamp(0.0, 1.0);
@@ -1116,8 +1146,37 @@ fn scope_shadow(mesh: &mut Scene, aspect: f32, state: ScopeVisualState) {
             .atan2(aspect - state.center_x)
             .rem_euclid(std::f32::consts::TAU),
     ]);
+    for radius in [inner, shadow_outer] {
+        add_scope_edge_intersections(&mut angles, radius, aspect, state.center_x, state.center_y);
+    }
     angles.sort_by(f32::total_cmp);
     angles.dedup_by(|a, b| (*a - *b).abs() < 1e-5);
+
+    let edge_radius = |angle: f32| {
+        let (c, s) = (angle.cos(), angle.sin());
+        let to_x_edge = if c > 0.0 {
+            (aspect - state.center_x) / c
+        } else if c < 0.0 {
+            (-aspect - state.center_x) / c
+        } else {
+            f32::INFINITY
+        };
+        let to_y_edge = if s > 0.0 {
+            (1.0 - state.center_y) / s
+        } else if s < 0.0 {
+            (-1.0 - state.center_y) / s
+        } else {
+            f32::INFINITY
+        };
+        to_x_edge.min(to_y_edge)
+    };
+    let at_angle = |angle: f32, radius: f32| {
+        [
+            (state.center_x + angle.cos() * radius) / aspect,
+            state.center_y + angle.sin() * radius,
+        ]
+    };
+    let point_at_edge = |angle: f32| at_angle(angle, edge_radius(angle));
 
     for i in 0..angles.len() {
         let a0 = angles[i];
@@ -1126,59 +1185,70 @@ fn scope_shadow(mesh: &mut Scene, aspect: f32, state: ScopeVisualState) {
         } else {
             angles[0] + std::f32::consts::TAU
         };
-        let point = |angle: f32| {
-            let c = angle.cos();
-            let s = angle.sin();
-            let to_x_edge = if c > 0.0 {
-                (aspect - state.center_x) / c
-            } else if c < 0.0 {
-                (-aspect - state.center_x) / c
-            } else {
-                f32::INFINITY
-            };
-            let to_y_edge = if s > f32::EPSILON {
-                (1.0 - state.center_y) / s
-            } else if s < -f32::EPSILON {
-                (-1.0 - state.center_y) / s
-            } else {
-                f32::INFINITY
-            };
-            let radius = to_x_edge.min(to_y_edge);
-            [
-                (state.center_x + c * radius) / aspect,
-                state.center_y + s * radius,
-            ]
-        };
-        let shadow_outer = inner + state.shadow_width;
-        let at_angle = |angle: f32, radius: f32| {
-            [
-                (state.center_x + angle.cos() * radius) / aspect,
-                state.center_y + angle.sin() * radius,
-            ]
-        };
-        if state.shadow_width > 0.0 {
+        let mid_edge = edge_radius((a0 + a1) * 0.5);
+        if inner >= mid_edge {
+            continue;
+        }
+        let ring_end_0 = shadow_outer.min(edge_radius(a0));
+        let ring_end_1 = shadow_outer.min(edge_radius(a1));
+        if state.shadow_width > 0.0 && ring_end_0 > inner && ring_end_1 > inner {
             push_scope_mask_quad(
                 mesh,
                 [
                     at_angle(a0, inner),
-                    at_angle(a0, shadow_outer),
-                    at_angle(a1, shadow_outer),
+                    at_angle(a0, ring_end_0),
+                    at_angle(a1, ring_end_1),
                     at_angle(a1, inner),
                 ],
                 [inner_opacity, 0.0, 0.0, inner_opacity],
             );
         }
-        if state.peripheral_opacity > 0.0 {
+        if state.peripheral_opacity > 0.0 && shadow_outer < mid_edge {
+            let fill_start_0 = shadow_outer.min(edge_radius(a0));
+            let fill_start_1 = shadow_outer.min(edge_radius(a1));
             push_scope_mask_quad(
                 mesh,
                 [
-                    at_angle(a0, shadow_outer),
-                    point(a0),
-                    point(a1),
-                    at_angle(a1, shadow_outer),
+                    at_angle(a0, fill_start_0),
+                    point_at_edge(a0),
+                    point_at_edge(a1),
+                    at_angle(a1, fill_start_1),
                 ],
                 [state.peripheral_opacity; 4],
             );
+        }
+    }
+}
+
+fn add_scope_edge_intersections(
+    angles: &mut Vec<f32>,
+    radius: f32,
+    aspect: f32,
+    center_x: f32,
+    center_y: f32,
+) {
+    for edge_x in [-aspect, aspect] {
+        let dx = edge_x - center_x;
+        let remaining = radius * radius - dx * dx;
+        if remaining >= 0.0 {
+            let dy = remaining.sqrt();
+            for relative_y in [-dy, dy] {
+                if (-1.0..=1.0).contains(&(center_y + relative_y)) {
+                    angles.push(relative_y.atan2(dx).rem_euclid(std::f32::consts::TAU));
+                }
+            }
+        }
+    }
+    for edge_y in [-1.0, 1.0] {
+        let dy = edge_y - center_y;
+        let remaining = radius * radius - dy * dy;
+        if remaining >= 0.0 {
+            let dx = remaining.sqrt();
+            for relative_x in [-dx, dx] {
+                if (-aspect..=aspect).contains(&(center_x + relative_x)) {
+                    angles.push(dy.atan2(relative_x).rem_euclid(std::f32::consts::TAU));
+                }
+            }
         }
     }
 }
@@ -1215,7 +1285,7 @@ fn scope_picture(mesh: &mut Scene, aspect: f32, progress: f32, sight_center: Vec
             aspect,
         );
     }
-    let arm = radius * SCOPE_RETICLE_ARM_RATIO;
+    let arm = radius.min(SCOPE_MAX_RADIUS) * SCOPE_RETICLE_ARM;
     let line = radius * SCOPE_RETICLE_LINE_RATIO;
     rect(
         mesh,
@@ -1263,6 +1333,7 @@ pub fn hud_mesh_with_menu(
         let x = layout.center_x;
         let y = layout.base_y;
         let dark = [0.10, 0.12, 0.14];
+        let weapon_model_start = m.vertices.len();
         match weapon.kind {
             WeaponKind::Pistol => {
                 slanted_rect(
@@ -1379,43 +1450,7 @@ pub fn hud_mesh_with_menu(
                 );
                 let scope_rim_opacity = 1.0 - weapon.ads_progress.clamp(0.0, 1.0);
                 if scope_rim_opacity > f32::EPSILON {
-                    let scope_rim = [0.18, 0.21, 0.23, scope_rim_opacity];
-                    rect_alpha(
-                        &mut m,
-                        x - 0.05,
-                        layout.sight_screen.y - 0.05,
-                        0.10,
-                        0.015,
-                        scope_rim,
-                        aspect,
-                    );
-                    rect_alpha(
-                        &mut m,
-                        x - 0.05,
-                        layout.sight_screen.y + 0.035,
-                        0.10,
-                        0.015,
-                        scope_rim,
-                        aspect,
-                    );
-                    rect_alpha(
-                        &mut m,
-                        x - 0.05,
-                        layout.sight_screen.y - 0.035,
-                        0.015,
-                        0.07,
-                        scope_rim,
-                        aspect,
-                    );
-                    rect_alpha(
-                        &mut m,
-                        x + 0.035,
-                        layout.sight_screen.y - 0.035,
-                        0.015,
-                        0.07,
-                        scope_rim,
-                        aspect,
-                    );
+                    scope_model_ring(&mut m, layout.sight_screen, aspect, scope_rim_opacity);
                 }
             }
         }
@@ -1444,6 +1479,14 @@ pub fn hud_mesh_with_menu(
                 [1., 0.8, 0.2],
                 aspect,
             );
+        }
+        if weapon.kind == WeaponKind::Sniper {
+            let progress = weapon.ads_progress.clamp(0.0, 1.0);
+            let eased = progress * progress * (3.0 - 2.0 * progress);
+            let visibility = 1.0 - eased;
+            for vertex in &mut m.vertices[weapon_model_start..] {
+                vertex.color[3] *= visibility;
+            }
         }
     }
     if weapon.kind == WeaponKind::Sniper {
@@ -1534,9 +1577,7 @@ pub fn hud_mesh_with_menu(
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        scope_shadow, settings_overlay, ScopeVisualState, SCOPE_MAX_RADIUS, SCOPE_SHADOW_SEGMENTS,
-    };
+    use super::{scope_shadow, settings_overlay, ScopeVisualState, SCOPE_MAX_RADIUS};
     use crate::simulation::weapon::{Weapon, WeaponKind, SNIPER};
 
     fn sniper_scope_state(progress: f32) -> ScopeVisualState {
@@ -1544,6 +1585,27 @@ mod tests {
         weapon.ads_progress = progress.clamp(0.0, 1.0);
         let sight_center = weapon.view_model_layout(0.0).sight_screen;
         ScopeVisualState::from_progress(progress, sight_center)
+    }
+
+    fn mask_covers_point(mesh: &crate::Scene, point: [f32; 2]) -> bool {
+        mesh.indices.as_chunks::<3>().0.iter().any(|triangle| {
+            let vertices = triangle.map(|index| mesh.vertices[index as usize]);
+            let sides = [
+                (point[0] - vertices[0].position[0])
+                    * (vertices[1].position[1] - vertices[0].position[1])
+                    - (point[1] - vertices[0].position[1])
+                        * (vertices[1].position[0] - vertices[0].position[0]),
+                (point[0] - vertices[1].position[0])
+                    * (vertices[2].position[1] - vertices[1].position[1])
+                    - (point[1] - vertices[1].position[1])
+                        * (vertices[2].position[0] - vertices[1].position[0]),
+                (point[0] - vertices[2].position[0])
+                    * (vertices[0].position[1] - vertices[2].position[1])
+                    - (point[1] - vertices[2].position[1])
+                        * (vertices[0].position[0] - vertices[2].position[0]),
+            ];
+            sides.iter().all(|side| *side >= 0.0) || sides.iter().all(|side| *side <= 0.0)
+        })
     }
 
     #[test]
@@ -1569,6 +1631,14 @@ mod tests {
         assert!(early.center_y < middle.center_y);
         assert!(middle.center_y < aligned.center_y);
         assert!(aligned.center_y.abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn fully_aimed_scope_view_fills_the_display_instead_of_looking_like_a_small_lens() {
+        let aligned = sniper_scope_state(1.0);
+        assert!(aligned.aperture_radius > 1.0);
+        assert!(aligned.aperture_radius > 16.0 / 9.0);
+        assert_eq!(aligned.aperture_radius, SCOPE_MAX_RADIUS);
     }
 
     #[test]
@@ -1602,23 +1672,24 @@ mod tests {
             indices: Vec::new(),
         };
         scope_shadow(&mut aligned, 16.0 / 9.0, sniper_scope_state(1.0));
-        assert_eq!(aligned.vertices.len(), (SCOPE_SHADOW_SEGMENTS + 4) * 4);
-        assert!((aligned.vertices[0].position[0] - SCOPE_MAX_RADIUS / (16.0 / 9.0)).abs() < 1e-5);
-        assert!(aligned.vertices[0].color[3] > 0.95);
+        assert_eq!(aligned.vertices.len() % 4, 0);
+        assert!(aligned.vertices.iter().any(|vertex| vertex.color[3] > 0.95));
+        assert!(!mask_covers_point(&aligned, [0.0, 0.9]));
+        assert!(mask_covers_point(&aligned, [0.99, 0.99]));
 
         let mut early = crate::Scene {
             vertices: Vec::new(),
             indices: Vec::new(),
         };
         scope_shadow(&mut early, 16.0 / 9.0, sniper_scope_state(0.3));
-        assert_eq!(early.vertices.len(), (SCOPE_SHADOW_SEGMENTS + 4) * 4);
+        assert_eq!(early.vertices.len() % 4, 0);
 
         let mut partial = crate::Scene {
             vertices: Vec::new(),
             indices: Vec::new(),
         };
         scope_shadow(&mut partial, 16.0 / 9.0, sniper_scope_state(0.5));
-        assert_eq!(partial.vertices.len(), (SCOPE_SHADOW_SEGMENTS + 4) * 8);
+        assert_eq!(partial.vertices.len() % 4, 0);
         assert!(partial.vertices[0].color[3] > partial.vertices[1].color[3]);
         assert!(partial.vertices[4].color[3] > 0.0);
         assert_eq!(partial.vertices[4].color[3], partial.vertices[5].color[3]);

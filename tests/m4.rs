@@ -20,7 +20,7 @@ fn loadout_starts_with_ar_and_keeps_magazines_per_weapon() {
 fn ar_and_pistol_ads_use_a_less_magnified_view_than_the_initial_tuning() {
     assert_eq!(WeaponKind::AssaultRifle.fov(1.0), 65.0);
     assert_eq!(WeaponKind::Pistol.fov(1.0), 67.0);
-    assert_eq!(WeaponKind::Sniper.fov(1.0), 32.0);
+    assert_eq!(WeaponKind::Sniper.fov(1.0), 20.0);
 }
 
 #[test]
@@ -98,7 +98,7 @@ fn weapon_models_use_a_compact_mesh_and_keep_the_muzzle_anchor() {
         loadout.advance(0.32, false);
         let mesh = liteweight_fps::ui::hud_mesh(loadout.active(), &combat, aspect, 0.0);
         assert!(
-            mesh.vertices.len() <= 100,
+            mesh.vertices.len() <= 130,
             "{kind:?} has {} vertices",
             mesh.vertices.len()
         );
@@ -218,11 +218,102 @@ fn sniper_scope_housing_fades_out_as_the_scope_view_appears() {
 }
 
 #[test]
+fn sniper_ads_reticle_stays_compact_and_thin() {
+    let mut loadout = Loadout::default();
+    loadout.switch(WeaponKind::Sniper);
+    loadout.advance(0.32, false);
+    loadout.active_mut().ads_progress = 1.0;
+    let aspect = 16.0 / 9.0;
+    let mesh = liteweight_fps::ui::hud_mesh(
+        loadout.active(),
+        &liteweight_fps::simulation::combat::Combat::default(),
+        aspect,
+        0.0,
+    );
+    let reticle: Vec<[f32; 2]> = mesh
+        .vertices
+        .iter()
+        .filter(|vertex| vertex.color == [0.14, 0.16, 0.18, 1.0])
+        .map(|vertex| [vertex.position[0] * aspect, vertex.position[1]])
+        .collect();
+    let max_extent = reticle
+        .iter()
+        .map(|point| point[0].abs().max(point[1].abs()))
+        .fold(0.0_f32, f32::max);
+    assert!(max_extent <= 0.16, "ADS reticle extent is {max_extent}");
+    let y_levels: Vec<f32> = reticle.iter().map(|point| point[1]).collect();
+    let min_gap = y_levels
+        .iter()
+        .flat_map(|a| y_levels.iter().map(move |b| (a - b).abs()))
+        .filter(|gap| *gap > 1e-6)
+        .fold(f32::INFINITY, f32::min);
+    assert!(
+        min_gap <= 0.004,
+        "ADS reticle stroke is too thick: {min_gap}"
+    );
+}
+
+#[test]
+fn sniper_rifle_model_fades_out_during_ads() {
+    let mut loadout = Loadout::default();
+    loadout.switch(WeaponKind::Sniper);
+    loadout.advance(0.32, false);
+    let combat = liteweight_fps::simulation::combat::Combat::default();
+    let body_alpha = |progress: f32, loadout: &mut Loadout| {
+        loadout.active_mut().ads_progress = progress;
+        liteweight_fps::ui::hud_mesh(loadout.active(), &combat, 16.0 / 9.0, 0.0)
+            .vertices
+            .into_iter()
+            .filter(|vertex| vertex.color[..3] == [0.19, 0.22, 0.24])
+            .map(|vertex| vertex.color[3])
+            .fold(0.0, f32::max)
+    };
+    let hip_alpha = body_alpha(0.0, &mut loadout);
+    let partial_alpha = body_alpha(0.5, &mut loadout);
+    let aimed_alpha = body_alpha(1.0, &mut loadout);
+    assert!(hip_alpha > partial_alpha);
+    assert!(partial_alpha > aimed_alpha);
+    assert_eq!(aimed_alpha, 0.0);
+}
+
+#[test]
+fn sniper_scope_rim_is_a_hollow_circle_when_unscoped() {
+    let mut loadout = Loadout::default();
+    loadout.switch(WeaponKind::Sniper);
+    loadout.advance(0.32, false);
+    let layout = loadout.active().view_model_layout(0.0);
+    let aspect = 16.0 / 9.0;
+    let mesh = liteweight_fps::ui::hud_mesh(
+        loadout.active(),
+        &liteweight_fps::simulation::combat::Combat::default(),
+        aspect,
+        0.0,
+    );
+    let radii: Vec<f32> = mesh
+        .vertices
+        .iter()
+        .filter(|vertex| vertex.color == [0.18, 0.21, 0.23, 1.0])
+        .map(|vertex| {
+            let x = vertex.position[0] * aspect - layout.sight_screen.x;
+            let y = vertex.position[1] - layout.sight_screen.y;
+            x.hypot(y)
+        })
+        .collect();
+    assert_eq!(radii.len(), 48, "12 low-poly ring segments expected");
+    assert!(
+        radii
+            .iter()
+            .all(|radius| { (radius - 0.05).abs() < 1e-5 || (radius - 0.035).abs() < 1e-5 }),
+        "scope rim vertices must lie on circular inner and outer edges"
+    );
+}
+
+#[test]
 fn sniper_ads_fov_change_does_not_move_or_pitch_the_player_camera() {
     let mut player = liteweight_fps::simulation::Player::new();
     player.look(0.3, 0.2);
     let wide = player.view_matrix_with(16.0 / 9.0, 70.0);
-    let scoped = player.view_matrix_with(16.0 / 9.0, 32.0);
+    let scoped = player.view_matrix_with(16.0 / 9.0, 20.0);
     let world_ray = |matrix: glam::Mat4| {
         (matrix.inverse().project_point3(Vec3::new(0.0, 0.0, 0.5)) - player.position).normalize()
     };
@@ -327,15 +418,32 @@ fn sniper_shot_direction_converges_to_view_during_ads() {
 }
 
 #[test]
-fn sniper_scope_fov_moves_smoothly_from_70_to_32_degrees_over_350ms() {
+fn sniper_quick_shot_alignment_converges_earlier_than_ads_progress() {
+    use glam::Vec3;
+
+    let mut loadout = Loadout::default();
+    loadout.switch(WeaponKind::Sniper);
+    loadout.advance(0.32, false);
+    let view = Vec3::new(0.0, 0.0, -1.0);
+    loadout.advance(0.175, true);
+    let halfway = loadout.active().shot_direction(view);
+    let deviation_degrees = halfway.dot(view).clamp(-1.0, 1.0).acos().to_degrees();
+    assert!(
+        deviation_degrees <= 1.1,
+        "halfway ADS shot is still misaligned by {deviation_degrees} degrees"
+    );
+}
+
+#[test]
+fn sniper_scope_fov_moves_smoothly_from_70_to_20_degrees_over_350ms() {
     let mut loadout = Loadout::default();
     loadout.switch(WeaponKind::Sniper);
     loadout.advance(0.32, false);
     assert_eq!(loadout.fov(), 70.);
     loadout.advance(0.2975, true);
-    assert!((loadout.fov() - 37.7).abs() < 1e-3);
+    assert!((loadout.fov() - 27.5).abs() < 1e-3);
     loadout.advance(0.0525, true);
-    assert!((loadout.fov() - 32.).abs() < 1e-5);
+    assert!((loadout.fov() - 20.).abs() < 1e-5);
 }
 
 #[test]
