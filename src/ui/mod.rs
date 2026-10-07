@@ -318,64 +318,6 @@ fn stroke_segment(
         .extend([base, base + 1, base + 2, base, base + 2, base + 3]);
 }
 
-fn tapered_rect(mesh: &mut Scene, shape: [f32; 5], color: [f32; 3], aspect: f32) {
-    let [x, y, bottom_width, top_width, height] = shape;
-    let base = mesh.vertices.len() as u16;
-    for (px, py) in [
-        (x - bottom_width * 0.5, y),
-        (x + bottom_width * 0.5, y),
-        (x + top_width * 0.5, y + height),
-        (x - top_width * 0.5, y + height),
-    ] {
-        mesh.vertices.push(Vertex {
-            position: [px / aspect, py, 0.0],
-            color: [color[0], color[1], color[2], 1.0],
-        });
-    }
-    mesh.indices
-        .extend([base, base + 1, base + 2, base, base + 2, base + 3]);
-}
-
-fn quad(mesh: &mut Scene, points: [[f32; 2]; 4], color: [f32; 3], aspect: f32) {
-    let base = mesh.vertices.len() as u16;
-    for point in points {
-        mesh.vertices.push(Vertex {
-            position: [point[0] / aspect, point[1], 0.0],
-            color: [color[0], color[1], color[2], 1.0],
-        });
-    }
-    mesh.indices
-        .extend([base, base + 1, base + 2, base, base + 2, base + 3]);
-}
-
-fn extruded_tapered_rect(mesh: &mut Scene, shape: [f32; 5], color: [f32; 3], aspect: f32) {
-    let [x, y, bottom_width, top_width, height] = shape;
-    let depth = [0.022, 0.014];
-    quad(
-        mesh,
-        [
-            [x + bottom_width * 0.5, y],
-            [x + bottom_width * 0.5 + depth[0], y + depth[1]],
-            [x + top_width * 0.5 + depth[0], y + height + depth[1]],
-            [x + top_width * 0.5, y + height],
-        ],
-        [0.07, 0.09, 0.11],
-        aspect,
-    );
-    tapered_rect(mesh, shape, color, aspect);
-    quad(
-        mesh,
-        [
-            [x - bottom_width * 0.5, y],
-            [x - bottom_width * 0.5 + 0.008, y],
-            [x - top_width * 0.5 + 0.008, y + height],
-            [x - top_width * 0.5, y + height],
-        ],
-        [0.46, 0.49, 0.52],
-        aspect,
-    );
-}
-
 fn triangle(
     mesh: &mut Scene,
     tip: [f32; 2],
@@ -1302,209 +1244,136 @@ pub fn hud_mesh_with_menu(
     {
         let layout = weapon.view_model_layout(weapon_y_offset);
         let (body_w, body_h, color) = match weapon.kind {
-            WeaponKind::Pistol => (layout.body_width, layout.body_height, [0.2, 0.22, 0.25]),
-            WeaponKind::AssaultRifle => (layout.body_width, layout.body_height, [0.13, 0.16, 0.19]),
-            WeaponKind::Sniper => (layout.body_width, layout.body_height, [0.16, 0.19, 0.22]),
+            WeaponKind::Pistol => (layout.body_width, layout.body_height, [0.24, 0.27, 0.30]),
+            WeaponKind::AssaultRifle => (layout.body_width, layout.body_height, [0.17, 0.20, 0.22]),
+            WeaponKind::Sniper => (layout.body_width, layout.body_height, [0.19, 0.22, 0.24]),
         };
         let x = layout.center_x;
         let y = layout.base_y;
-        let top_width = match weapon.kind {
-            WeaponKind::Pistol => body_w * 0.82,
-            WeaponKind::AssaultRifle => body_w * 0.72,
-            WeaponKind::Sniper => body_w * 0.58,
-        };
-        extruded_tapered_rect(&mut m, [x, y, body_w, top_width, body_h], color, aspect);
-        rect(
-            &mut m,
-            x - 0.04,
-            y + body_h - 0.04,
-            0.08,
-            0.11,
-            [0.28, 0.32, 0.36],
-            aspect,
-        );
+        let dark = [0.10, 0.12, 0.14];
         match weapon.kind {
             WeaponKind::Pistol => {
                 slanted_rect(
                     &mut m,
-                    [x + 0.014, y - 0.10, 0.052, 0.034, 0.15, -0.025],
-                    [0.12, 0.14, 0.16],
+                    [x + 0.01, y + body_h * 0.05, 0.07, 0.055, 0.16, -0.025],
+                    dark,
                     aspect,
                 );
                 rect(
                     &mut m,
-                    x - body_w * 0.36,
-                    y + body_h * 0.58,
-                    body_w * 0.72,
-                    body_h * 0.34,
-                    [0.38, 0.4, 0.42],
+                    x - body_w * 0.40,
+                    y + body_h * 0.48,
+                    body_w * 0.80,
+                    body_h * 0.45,
+                    color,
                     aspect,
-                ); // slide
+                );
                 rect(
                     &mut m,
-                    x - 0.012,
-                    y + body_h * 0.91,
-                    0.024,
-                    0.12,
-                    [0.22, 0.24, 0.26],
+                    x - 0.016,
+                    y + body_h * 0.90,
+                    0.032,
+                    0.13,
+                    dark,
                     aspect,
-                ); // barrel
-                rect(
-                    &mut m,
-                    x - 0.022,
-                    y - 0.09,
-                    0.044,
-                    0.12,
-                    [0.12, 0.14, 0.16],
-                    aspect,
-                ); // grip
-                for (start, end) in [
-                    ([x - 0.003, y + 0.01], [x + 0.028, y + 0.00]),
-                    ([x + 0.028, y + 0.00], [x + 0.035, y + 0.065]),
-                    ([x + 0.035, y + 0.065], [x + 0.004, y + 0.075]),
-                ] {
-                    stroke_segment(&mut m, start, end, 0.009, [0.42, 0.44, 0.45], aspect);
-                }
-                for rib in 0..4 {
-                    rect(
-                        &mut m,
-                        x - 0.017,
-                        y - 0.075 + rib as f32 * 0.022,
-                        0.034,
-                        0.006,
-                        [0.32, 0.34, 0.36],
-                        aspect,
-                    );
-                }
-                rect(
-                    &mut m,
-                    x - 0.008,
-                    y + body_h + 0.02,
-                    0.016,
-                    0.035,
-                    [0.7, 0.45, 0.12],
-                    aspect,
-                ); // front sight
+                );
             }
             WeaponKind::AssaultRifle => {
                 slanted_rect(
                     &mut m,
-                    [x - 0.105, y + 0.04, 0.062, 0.038, 0.17, -0.025],
-                    [0.24, 0.27, 0.3],
+                    [
+                        x - body_w * 0.42,
+                        y + body_h * 0.30,
+                        body_w * 0.42,
+                        body_w * 0.34,
+                        body_h * 0.28,
+                        -0.02,
+                    ],
+                    dark,
                     aspect,
-                ); // stock
+                );
                 rect(
                     &mut m,
-                    x - 0.024,
-                    y + body_h + 0.07,
-                    0.048,
-                    0.19,
-                    [0.36, 0.38, 0.4],
+                    x - 0.02,
+                    y + body_h * 0.92,
+                    0.04,
+                    0.22,
+                    dark,
                     aspect,
-                ); // barrel
-                tapered_rect(
+                );
+                rect(
                     &mut m,
-                    [x - 0.07, y + 0.1, 0.15, 0.12, 0.17],
-                    [0.28, 0.31, 0.34],
+                    x - body_w * 0.34,
+                    y + body_h * 0.45,
+                    body_w * 0.68,
+                    body_h * 0.48,
+                    color,
                     aspect,
-                ); // handguard
-                for rib in 0..5 {
-                    rect(
-                        &mut m,
-                        x - 0.066 + rib as f32 * 0.03,
-                        y + 0.12,
-                        0.006,
-                        0.10,
-                        [0.42, 0.44, 0.46],
-                        aspect,
-                    );
-                }
+                );
                 slanted_rect(
                     &mut m,
-                    [x - 0.005, y - 0.15, 0.072, 0.055, 0.18, -0.035],
-                    [0.18, 0.21, 0.23],
+                    [
+                        x - 0.01,
+                        y + body_h * 0.05,
+                        0.085,
+                        0.065,
+                        body_h * 0.42,
+                        -0.02,
+                    ],
+                    dark,
                     aspect,
-                ); // magazine
+                );
                 rect(
                     &mut m,
-                    x - 0.08,
-                    y + body_h + 0.02,
-                    0.16,
-                    0.035,
-                    [0.25, 0.28, 0.31],
-                    aspect,
-                ); // optic
-                rect(
-                    &mut m,
-                    x - 0.025,
-                    y + body_h + 0.055,
-                    0.05,
-                    0.025,
-                    [0.1, 0.14, 0.15],
+                    x - 0.045,
+                    y + body_h * 0.89,
+                    0.09,
+                    0.045,
+                    dark,
                     aspect,
                 );
             }
             WeaponKind::Sniper => {
                 slanted_rect(
                     &mut m,
-                    [x, y - 0.13, 0.058, 0.038, 0.17, -0.025],
-                    [0.12, 0.14, 0.17],
+                    [
+                        x,
+                        y + body_h * 0.20,
+                        body_w * 0.30,
+                        body_w * 0.22,
+                        body_h * 0.30,
+                        -0.02,
+                    ],
+                    dark,
                     aspect,
                 );
                 rect(
                     &mut m,
-                    x - 0.018,
+                    x - 0.016,
                     y + body_h * 0.52,
-                    0.036,
-                    0.31,
-                    [0.34, 0.37, 0.39],
+                    0.032,
+                    body_h * 0.66,
+                    dark,
                     aspect,
-                ); // long barrel
+                );
                 rect(
                     &mut m,
-                    x - 0.07,
-                    y + body_h * 0.61,
-                    0.14,
-                    0.035,
-                    [0.22, 0.24, 0.26],
+                    x - body_w * 0.34,
+                    y + body_h * 0.44,
+                    body_w * 0.68,
+                    body_h * 0.48,
+                    color,
                     aspect,
-                ); // receiver
+                );
                 rect(
                     &mut m,
-                    x - 0.045,
+                    x - 0.05,
                     y + body_h * 0.84,
-                    0.09,
-                    0.11,
-                    [0.12, 0.15, 0.18],
+                    0.10,
+                    0.10,
+                    dark,
                     aspect,
-                ); // scope tube
-                rect(
-                    &mut m,
-                    x - 0.058,
-                    y + body_h * 0.92,
-                    0.116,
-                    0.035,
-                    [0.25, 0.29, 0.32],
-                    aspect,
-                ); // scope rim
-                rect(
-                    &mut m,
-                    x + 0.05,
-                    y + body_h * 0.57,
-                    0.07,
-                    0.018,
-                    [0.5, 0.52, 0.54],
-                    aspect,
-                ); // bolt handle
-                rect(
-                    &mut m,
-                    x - 0.018,
-                    y - 0.13,
-                    0.036,
-                    0.15,
-                    [0.12, 0.14, 0.17],
-                    aspect,
-                ); // magazine
+                );
             }
         }
         // The highlighted barrel aperture marks the same point used as the ray origin.

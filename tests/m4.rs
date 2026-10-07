@@ -75,7 +75,7 @@ fn rendered_muzzle_tip_uses_the_same_anchor_as_the_shot_origin() {
 }
 
 #[test]
-fn weapon_meshes_include_highlight_and_side_facet_shading() {
+fn weapon_models_use_a_compact_mesh_and_keep_the_muzzle_anchor() {
     let aspect = 16.0 / 9.0;
     let mut loadout = Loadout::default();
     let combat = liteweight_fps::simulation::combat::Combat::default();
@@ -87,14 +87,42 @@ fn weapon_meshes_include_highlight_and_side_facet_shading() {
         loadout.switch(kind);
         loadout.advance(0.32, false);
         let mesh = liteweight_fps::ui::hud_mesh(loadout.active(), &combat, aspect, 0.0);
-        assert!(mesh
-            .vertices
-            .iter()
-            .any(|vertex| vertex.color == [0.46, 0.49, 0.52, 1.0]));
-        assert!(mesh
-            .vertices
-            .iter()
-            .any(|vertex| vertex.color == [0.07, 0.09, 0.11, 1.0]));
+        assert!(
+            mesh.vertices.len() <= 100,
+            "{kind:?} has {} vertices",
+            mesh.vertices.len()
+        );
+        let muzzle = loadout.active().view_model_layout(0.0).muzzle_screen;
+        assert!(mesh.vertices.iter().any(|vertex| {
+            (vertex.position[0] - muzzle.x / aspect).abs() < 1e-6
+                && (vertex.position[1] - muzzle.y).abs() < 1e-6
+        }));
+        {
+            let layout = loadout.active().view_model_layout(0.0);
+            let maximum_part_height = if kind == WeaponKind::Pistol {
+                0.75
+            } else {
+                0.51
+            };
+            let connected_lower_part = mesh.vertices.iter().any(|vertex| {
+                vertex.color == [0.10, 0.12, 0.14, 1.0]
+                    && (vertex.position[0] - layout.center_x / aspect).abs() < 0.04
+                    && vertex.position[1] > layout.base_y + layout.body_height * 0.4
+                    && vertex.position[1] < layout.base_y + layout.body_height * maximum_part_height
+            });
+            match kind {
+                WeaponKind::Pistol => {
+                    assert!(connected_lower_part, "pistol grip should meet the frame")
+                }
+                WeaponKind::AssaultRifle => {
+                    assert!(connected_lower_part, "AR magazine should meet the receiver")
+                }
+                WeaponKind::Sniper => assert!(
+                    connected_lower_part,
+                    "sniper stock should meet the receiver"
+                ),
+            }
+        }
     }
 }
 
