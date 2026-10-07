@@ -71,21 +71,21 @@ pub fn arena_scaled(scale: f32) -> Scene {
     );
     for x in [-25., 25.] {
         s.cube(
-            horizontal(Vec3::new(x, 2., 0.)),
-            horizontal(Vec3::new(0.5, 4., 50.)),
+            horizontal(Vec3::new(x, 6., 0.)),
+            horizontal(Vec3::new(0.5, 12., 50.)),
             [0.5, 0.55, 0.6],
         );
         s.cube(
-            horizontal(Vec3::new(0., 2., x)),
-            horizontal(Vec3::new(50., 4., 0.5)),
+            horizontal(Vec3::new(0., 6., x)),
+            horizontal(Vec3::new(50., 12., 0.5)),
             [0.5, 0.55, 0.6],
         );
     }
     for x in [-12., 0., 12.] {
         for z in [-8., 8.] {
             s.cube(
-                horizontal(Vec3::new(x, 1., z)),
-                horizontal(Vec3::new(3., 2., 3.)),
+                horizontal(Vec3::new(x, 2.5, z)),
+                horizontal(Vec3::new(3., 5., 3.)),
                 [0.3, 0.5, 0.55],
             );
         }
@@ -128,18 +128,18 @@ pub fn arena_colliders_scaled(scale: f32) -> Vec<Aabb> {
     for x in [-25., 25.] {
         colliders.push(Aabb::new(
             Vec3::new(x * scale - 0.25 * scale, 0., -25. * scale),
-            Vec3::new(x * scale + 0.25 * scale, 4., 25. * scale),
+            Vec3::new(x * scale + 0.25 * scale, 12., 25. * scale),
         ));
         colliders.push(Aabb::new(
             Vec3::new(-25. * scale, 0., x * scale - 0.25 * scale),
-            Vec3::new(25. * scale, 4., x * scale + 0.25 * scale),
+            Vec3::new(25. * scale, 12., x * scale + 0.25 * scale),
         ));
     }
     for x in [-12., 0., 12.] {
         for z in [-8., 8.] {
             colliders.push(Aabb::new(
                 Vec3::new((x - 1.5) * scale, 0., (z - 1.5) * scale),
-                Vec3::new((x + 1.5) * scale, 2., (z + 1.5) * scale),
+                Vec3::new((x + 1.5) * scale, 5., (z + 1.5) * scale),
             ));
         }
     }

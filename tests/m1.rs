@@ -56,7 +56,7 @@ fn arena_has_floor_four_walls_and_six_covers_without_targets() {
         .iter()
         .map(|v| v.position[1])
         .fold(f32::NEG_INFINITY, f32::max);
-    assert_eq!((min_y, max_y), (-0.5, 4.));
+    assert_eq!((min_y, max_y), (-0.5, 12.));
     let benchmark = liteweight_fps::scene(5);
     assert_eq!(&benchmark.vertices[..mesh.vertices.len()], &mesh.vertices);
     assert_eq!(&benchmark.indices[..mesh.indices.len()], &mesh.indices);

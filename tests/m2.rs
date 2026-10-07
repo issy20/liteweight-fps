@@ -390,6 +390,8 @@ fn wall_collision_stops_movement_with_sliding() {
 #[test]
 fn arena_colliders_cover_floor_walls_and_covers() {
     let colliders = world::arena_colliders();
+    assert!(colliders[1..5].iter().all(|wall| wall.max.y == 12.0));
+    assert!(colliders[5..].iter().all(|cover| cover.max.y == 5.0));
     let hits_cover = colliders
         .iter()
         .any(|c| c.hits_cylinder(Vec3::new(0., 1., -8.), PLAYER_RADIUS, PLAYER_HEIGHT));
