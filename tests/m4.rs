@@ -45,6 +45,16 @@ fn ballistic_muzzle_projects_to_the_visible_weapon_muzzle_in_hip_and_ads() {
             let projected = player.view_matrix_with(aspect, fov).project_point3(muzzle);
             assert!((projected.x - layout.muzzle_screen.x / aspect).abs() < 1e-5);
             assert!((projected.y - layout.muzzle_screen.y).abs() < 1e-5);
+            if kind == WeaponKind::Sniper && progress == 1.0 {
+                assert!(
+                    layout.muzzle_screen.y < -0.05,
+                    "sniper barrel must stay below the centered scope axis"
+                );
+                assert!(layout.sight_screen.y.abs() < 1e-6);
+            }
+            if kind != WeaponKind::Sniper && progress == 1.0 {
+                assert!(layout.muzzle_screen.y.abs() < 1e-6);
+            }
         }
     }
 }
@@ -143,6 +153,68 @@ fn standard_reticle_is_hidden_while_ads_is_active() {
     assert!(has_center_reticle(0.0));
     assert!(!has_center_reticle(0.5));
     assert!(!has_center_reticle(1.0));
+}
+
+#[test]
+fn sniper_scope_model_does_not_cover_the_optical_center() {
+    let mut loadout = Loadout::default();
+    loadout.switch(WeaponKind::Sniper);
+    loadout.advance(0.32, false);
+    loadout.active_mut().ads_progress = 1.0;
+    let layout = loadout.active().view_model_layout(0.0);
+    let mesh = liteweight_fps::ui::hud_mesh(
+        loadout.active(),
+        &liteweight_fps::simulation::combat::Combat::default(),
+        16.0 / 9.0,
+        0.0,
+    );
+    let center = [layout.sight_screen.x / (16.0 / 9.0), layout.sight_screen.y];
+    let scope_part_color =
+        |color| color == [0.10, 0.12, 0.14, 1.0] || color == [0.18, 0.21, 0.23, 1.0];
+    let covered_by_dark_weapon_face = mesh.indices.as_chunks::<3>().0.iter().any(|triangle| {
+        let vertices =
+            [triangle[0], triangle[1], triangle[2]].map(|index| mesh.vertices[index as usize]);
+        if !vertices.iter().all(|vertex| scope_part_color(vertex.color)) {
+            return false;
+        }
+        let points = vertices.map(|vertex| [vertex.position[0], vertex.position[1]]);
+        let side = |a: [f32; 2], b: [f32; 2], p: [f32; 2]| {
+            (p[0] - a[0]) * (b[1] - a[1]) - (p[1] - a[1]) * (b[0] - a[0])
+        };
+        let sides = [
+            side(points[0], points[1], center),
+            side(points[1], points[2], center),
+            side(points[2], points[0], center),
+        ];
+        sides.iter().all(|value| *value >= 0.0) || sides.iter().all(|value| *value <= 0.0)
+    });
+    assert!(
+        !covered_by_dark_weapon_face,
+        "the scope housing must leave its sight axis open"
+    );
+}
+
+#[test]
+fn sniper_scope_housing_fades_out_as_the_scope_view_appears() {
+    let mut loadout = Loadout::default();
+    loadout.switch(WeaponKind::Sniper);
+    loadout.advance(0.32, false);
+    let combat = liteweight_fps::simulation::combat::Combat::default();
+    let rim_alpha = |progress: f32, loadout: &mut Loadout| {
+        loadout.active_mut().ads_progress = progress;
+        liteweight_fps::ui::hud_mesh(loadout.active(), &combat, 16.0 / 9.0, 0.0)
+            .vertices
+            .into_iter()
+            .filter(|vertex| vertex.color[..3] == [0.18, 0.21, 0.23])
+            .map(|vertex| vertex.color[3])
+            .fold(0.0, f32::max)
+    };
+    let hip_alpha = rim_alpha(0.0, &mut loadout);
+    let partial_alpha = rim_alpha(0.5, &mut loadout);
+    let aimed_alpha = rim_alpha(1.0, &mut loadout);
+    assert!(hip_alpha > partial_alpha);
+    assert!(partial_alpha > aimed_alpha);
+    assert_eq!(aimed_alpha, 0.0);
 }
 
 #[test]
@@ -333,5 +405,10 @@ fn weapon_models_are_distinct_and_scope_view_transitions_without_hiding_the_rifl
     let fully_aimed = hud_mesh(loadout.active(), &Combat::default(), 16. / 9., 0.);
     assert!(partial.vertices.len() > hip.vertices.len());
     assert!(middle.vertices.len() > partial.vertices.len());
-    assert_eq!(fully_aimed.vertices.len(), partial.vertices.len());
+    assert!(fully_aimed.vertices.len() < partial.vertices.len());
+    let muzzle = loadout.active().view_model_layout(0.0).muzzle_screen;
+    assert!(fully_aimed.vertices.iter().any(|vertex| {
+        (vertex.position[0] - muzzle.x / (16. / 9.)).abs() < 1e-6
+            && (vertex.position[1] - muzzle.y).abs() < 1e-6
+    }));
 }

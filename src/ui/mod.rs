@@ -9,7 +9,7 @@ use crate::{
     },
     Scene, Vertex,
 };
-use glam::Vec3;
+use glam::{Vec2, Vec3};
 
 pub fn world_mesh(combat: &Combat) -> Scene {
     let mut mesh = Scene {
@@ -1058,7 +1058,6 @@ fn digit(mesh: &mut Scene, n: u32, x: f32, y: f32, aspect: f32) {
 }
 const SCOPE_MAX_RADIUS: f32 = 0.56;
 const SCOPE_MAX_SHADOW_WIDTH: f32 = 0.8;
-const SCOPE_START_OFFSET: f32 = 0.10;
 const SCOPE_SHADOW_SEGMENTS: usize = 24;
 const SCOPE_RING_SEGMENTS: usize = 32;
 const SCOPE_TICK_SIZE_RATIO: f32 = 0.018;
@@ -1072,19 +1071,21 @@ const SCOPE_SHADOW_PEAK_ALPHA: f32 = 0.65;
 #[derive(Clone, Copy, Debug)]
 struct ScopeVisualState {
     center_x: f32,
+    center_y: f32,
     aperture_radius: f32,
     shadow_width: f32,
     peripheral_opacity: f32,
 }
 impl ScopeVisualState {
-    fn from_progress(progress: f32) -> Self {
+    fn from_progress(progress: f32, sight_center: Vec2) -> Self {
         let progress = progress.clamp(0.0, 1.0);
         let eased = progress * progress * (3.0 - 2.0 * progress);
         let darken_progress = ((progress - PERIPHERAL_DARKEN_START)
             / (1.0 - PERIPHERAL_DARKEN_START))
             .clamp(0.0, 1.0);
         Self {
-            center_x: SCOPE_START_OFFSET * (1.0 - eased),
+            center_x: sight_center.x,
+            center_y: sight_center.y,
             aperture_radius: SCOPE_MAX_RADIUS * eased,
             shadow_width: SCOPE_MAX_SHADOW_WIDTH * progress * (1.0 - progress),
             peripheral_opacity: PERIPHERAL_MAX_OPACITY
@@ -1101,13 +1102,19 @@ fn scope_shadow(mesh: &mut Scene, aspect: f32, state: ScopeVisualState) {
     let mut angles: Vec<f32> = (0..SCOPE_SHADOW_SEGMENTS)
         .map(|i| i as f32 * std::f32::consts::TAU / SCOPE_SHADOW_SEGMENTS as f32)
         .collect();
-    let right_corner_angle = 1.0_f32.atan2(aspect - state.center_x);
-    let left_corner_angle = 1.0_f32.atan2(aspect + state.center_x);
     angles.extend([
-        right_corner_angle,
-        std::f32::consts::PI - left_corner_angle,
-        std::f32::consts::PI + left_corner_angle,
-        std::f32::consts::TAU - right_corner_angle,
+        (1.0 - state.center_y)
+            .atan2(aspect - state.center_x)
+            .rem_euclid(std::f32::consts::TAU),
+        (1.0 - state.center_y)
+            .atan2(-aspect - state.center_x)
+            .rem_euclid(std::f32::consts::TAU),
+        (-1.0 - state.center_y)
+            .atan2(-aspect - state.center_x)
+            .rem_euclid(std::f32::consts::TAU),
+        (-1.0 - state.center_y)
+            .atan2(aspect - state.center_x)
+            .rem_euclid(std::f32::consts::TAU),
     ]);
     angles.sort_by(f32::total_cmp);
     angles.dedup_by(|a, b| (*a - *b).abs() < 1e-5);
@@ -1129,19 +1136,24 @@ fn scope_shadow(mesh: &mut Scene, aspect: f32, state: ScopeVisualState) {
             } else {
                 f32::INFINITY
             };
-            let to_y_edge = if s.abs() > f32::EPSILON {
-                1.0 / s.abs()
+            let to_y_edge = if s > f32::EPSILON {
+                (1.0 - state.center_y) / s
+            } else if s < -f32::EPSILON {
+                (-1.0 - state.center_y) / s
             } else {
                 f32::INFINITY
             };
             let radius = to_x_edge.min(to_y_edge);
-            [(state.center_x + c * radius) / aspect, s * radius]
+            [
+                (state.center_x + c * radius) / aspect,
+                state.center_y + s * radius,
+            ]
         };
         let shadow_outer = inner + state.shadow_width;
         let at_angle = |angle: f32, radius: f32| {
             [
                 (state.center_x + angle.cos() * radius) / aspect,
-                angle.sin() * radius,
+                state.center_y + angle.sin() * radius,
             ]
         };
         if state.shadow_width > 0.0 {
@@ -1183,8 +1195,8 @@ fn push_scope_mask_quad(mesh: &mut Scene, points: [[f32; 2]; 4], opacity: [f32; 
         .extend([base, base + 1, base + 2, base, base + 2, base + 3]);
 }
 
-fn scope_picture(mesh: &mut Scene, aspect: f32, progress: f32) {
-    let state = ScopeVisualState::from_progress(progress);
+fn scope_picture(mesh: &mut Scene, aspect: f32, progress: f32, sight_center: Vec2) {
+    let state = ScopeVisualState::from_progress(progress, sight_center);
     if state.aperture_radius == 0.0 {
         return;
     }
@@ -1196,7 +1208,7 @@ fn scope_picture(mesh: &mut Scene, aspect: f32, progress: f32) {
         rect(
             mesh,
             state.center_x + angle.cos() * radius - tick * 0.5,
-            angle.sin() * radius - tick * 0.5,
+            state.center_y + angle.sin() * radius - tick * 0.5,
             tick,
             tick,
             [0.12, 0.15, 0.17],
@@ -1208,7 +1220,7 @@ fn scope_picture(mesh: &mut Scene, aspect: f32, progress: f32) {
     rect(
         mesh,
         state.center_x - line * 0.5,
-        -arm,
+        state.center_y - arm,
         line,
         arm * 2.0,
         [0.14, 0.16, 0.18],
@@ -1217,7 +1229,7 @@ fn scope_picture(mesh: &mut Scene, aspect: f32, progress: f32) {
     rect(
         mesh,
         state.center_x - arm,
-        -line * 0.5,
+        state.center_y - line * 0.5,
         arm * 2.0,
         line,
         [0.14, 0.16, 0.18],
@@ -1365,15 +1377,46 @@ pub fn hud_mesh_with_menu(
                     color,
                     aspect,
                 );
-                rect(
-                    &mut m,
-                    x - 0.05,
-                    y + body_h * 0.84,
-                    0.10,
-                    0.10,
-                    dark,
-                    aspect,
-                );
+                let scope_rim_opacity = 1.0 - weapon.ads_progress.clamp(0.0, 1.0);
+                if scope_rim_opacity > f32::EPSILON {
+                    let scope_rim = [0.18, 0.21, 0.23, scope_rim_opacity];
+                    rect_alpha(
+                        &mut m,
+                        x - 0.05,
+                        layout.sight_screen.y - 0.05,
+                        0.10,
+                        0.015,
+                        scope_rim,
+                        aspect,
+                    );
+                    rect_alpha(
+                        &mut m,
+                        x - 0.05,
+                        layout.sight_screen.y + 0.035,
+                        0.10,
+                        0.015,
+                        scope_rim,
+                        aspect,
+                    );
+                    rect_alpha(
+                        &mut m,
+                        x - 0.05,
+                        layout.sight_screen.y - 0.035,
+                        0.015,
+                        0.07,
+                        scope_rim,
+                        aspect,
+                    );
+                    rect_alpha(
+                        &mut m,
+                        x + 0.035,
+                        layout.sight_screen.y - 0.035,
+                        0.015,
+                        0.07,
+                        scope_rim,
+                        aspect,
+                    );
+                }
             }
         }
         // The highlighted barrel aperture marks the same point used as the ray origin.
@@ -1404,7 +1447,12 @@ pub fn hud_mesh_with_menu(
         }
     }
     if weapon.kind == WeaponKind::Sniper {
-        scope_picture(&mut m, aspect, weapon.ads_progress);
+        scope_picture(
+            &mut m,
+            aspect,
+            weapon.ads_progress,
+            weapon.view_model_layout(weapon_y_offset).sight_screen,
+        );
     }
     if weapon.ads_progress <= f32::EPSILON {
         let gap = 0.008 + weapon.spread(false) * 1.4;
@@ -1489,14 +1537,22 @@ mod tests {
     use super::{
         scope_shadow, settings_overlay, ScopeVisualState, SCOPE_MAX_RADIUS, SCOPE_SHADOW_SEGMENTS,
     };
+    use crate::simulation::weapon::{Weapon, WeaponKind, SNIPER};
+
+    fn sniper_scope_state(progress: f32) -> ScopeVisualState {
+        let mut weapon = Weapon::new(WeaponKind::Sniper, SNIPER);
+        weapon.ads_progress = progress.clamp(0.0, 1.0);
+        let sight_center = weapon.view_model_layout(0.0).sight_screen;
+        ScopeVisualState::from_progress(progress, sight_center)
+    }
 
     #[test]
     fn scope_view_grows_smoothly_while_eye_alignment_shadow_fades() {
-        let hip = ScopeVisualState::from_progress(0.0);
-        let early = ScopeVisualState::from_progress(0.3);
-        let middle = ScopeVisualState::from_progress(0.5);
-        let late = ScopeVisualState::from_progress(0.7);
-        let aligned = ScopeVisualState::from_progress(1.0);
+        let hip = sniper_scope_state(0.0);
+        let early = sniper_scope_state(0.3);
+        let middle = sniper_scope_state(0.5);
+        let late = sniper_scope_state(0.7);
+        let aligned = sniper_scope_state(1.0);
 
         assert_eq!(hip.aperture_radius, 0.0);
         assert!(early.aperture_radius < middle.aperture_radius);
@@ -1509,23 +1565,27 @@ mod tests {
         assert!(hip.center_x > early.center_x);
         assert!(early.center_x > middle.center_x);
         assert!(middle.center_x > aligned.center_x);
+        assert!(hip.center_y < early.center_y);
+        assert!(early.center_y < middle.center_y);
+        assert!(middle.center_y < aligned.center_y);
+        assert!(aligned.center_y.abs() < f32::EPSILON);
     }
 
     #[test]
     fn scope_geometry_is_bounded_for_out_of_range_progress() {
-        let below = ScopeVisualState::from_progress(-2.0);
-        let above = ScopeVisualState::from_progress(2.0);
+        let below = sniper_scope_state(-2.0);
+        let above = sniper_scope_state(2.0);
         assert_eq!(below.aperture_radius, 0.0);
         assert_eq!(
             above.aperture_radius,
-            ScopeVisualState::from_progress(1.0).aperture_radius
+            sniper_scope_state(1.0).aperture_radius
         );
     }
 
     #[test]
     fn peripheral_opacity_begins_gradually_and_rises_to_near_black() {
         let levels = [0.0, 0.3, 0.5, 0.7, 0.9, 1.0]
-            .map(|progress| ScopeVisualState::from_progress(progress).peripheral_opacity);
+            .map(|progress| sniper_scope_state(progress).peripheral_opacity);
         assert_eq!(levels[0], 0.0);
         assert_eq!(levels[1], 0.0);
         assert!(levels[2] > levels[1]);
@@ -1541,11 +1601,7 @@ mod tests {
             vertices: Vec::new(),
             indices: Vec::new(),
         };
-        scope_shadow(
-            &mut aligned,
-            16.0 / 9.0,
-            ScopeVisualState::from_progress(1.0),
-        );
+        scope_shadow(&mut aligned, 16.0 / 9.0, sniper_scope_state(1.0));
         assert_eq!(aligned.vertices.len(), (SCOPE_SHADOW_SEGMENTS + 4) * 4);
         assert!((aligned.vertices[0].position[0] - SCOPE_MAX_RADIUS / (16.0 / 9.0)).abs() < 1e-5);
         assert!(aligned.vertices[0].color[3] > 0.95);
@@ -1554,18 +1610,14 @@ mod tests {
             vertices: Vec::new(),
             indices: Vec::new(),
         };
-        scope_shadow(&mut early, 16.0 / 9.0, ScopeVisualState::from_progress(0.3));
+        scope_shadow(&mut early, 16.0 / 9.0, sniper_scope_state(0.3));
         assert_eq!(early.vertices.len(), (SCOPE_SHADOW_SEGMENTS + 4) * 4);
 
         let mut partial = crate::Scene {
             vertices: Vec::new(),
             indices: Vec::new(),
         };
-        scope_shadow(
-            &mut partial,
-            16.0 / 9.0,
-            ScopeVisualState::from_progress(0.5),
-        );
+        scope_shadow(&mut partial, 16.0 / 9.0, sniper_scope_state(0.5));
         assert_eq!(partial.vertices.len(), (SCOPE_SHADOW_SEGMENTS + 4) * 8);
         assert!(partial.vertices[0].color[3] > partial.vertices[1].color[3]);
         assert!(partial.vertices[4].color[3] > 0.0);
@@ -1580,7 +1632,7 @@ mod tests {
                 vertices: Vec::new(),
                 indices: Vec::new(),
             };
-            scope_shadow(&mut mesh, aspect, ScopeVisualState::from_progress(progress));
+            scope_shadow(&mut mesh, aspect, sniper_scope_state(progress));
             for corner in [[-1.0, -1.0], [-1.0, 1.0], [1.0, -1.0], [1.0, 1.0]] {
                 assert!(
                     mesh.vertices.iter().any(|vertex| {

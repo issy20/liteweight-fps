@@ -104,17 +104,19 @@ pub struct Weapon {
     pub bolt_remaining: f32,
 }
 
-/// Shared screen-space layout for the HUD weapon and its physical firing origin.
+/// Shared screen-space layout for the HUD weapon, sight axis, and firing origin.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct WeaponViewModelLayout {
     pub center_x: f32,
     pub base_y: f32,
     pub body_width: f32,
     pub body_height: f32,
+    pub sight_screen: Vec2,
     pub muzzle_screen: Vec2,
 }
 
 const VIEW_MODEL_MUZZLE_DEPTH: f32 = 0.65;
+const SNIPER_SCOPE_SIGHT_HEIGHT: f32 = 0.62;
 
 impl Default for Weapon {
     fn default() -> Self {
@@ -185,10 +187,10 @@ impl Weapon {
     }
     pub fn view_model_layout(&self, weapon_y_offset: f32) -> WeaponViewModelLayout {
         let progress = self.ads_progress.clamp(0.0, 1.0);
-        let (body_width, body_height, muzzle_height) = match self.kind {
-            WeaponKind::Pistol => (0.11, 0.28, 0.28 * 0.91 + 0.12),
-            WeaponKind::AssaultRifle => (0.17, 0.4, 0.4 + 0.07 + 0.19),
-            WeaponKind::Sniper => (0.12, 0.48, 0.48 * 0.52 + 0.31),
+        let (body_width, body_height, sight_height, muzzle_height) = match self.kind {
+            WeaponKind::Pistol => (0.11, 0.28, 0.28 * 0.91 + 0.12, 0.28 * 0.91 + 0.12),
+            WeaponKind::AssaultRifle => (0.17, 0.4, 0.4 + 0.07 + 0.19, 0.4 + 0.07 + 0.19),
+            WeaponKind::Sniper => (0.12, 0.48, SNIPER_SCOPE_SIGHT_HEIGHT, 0.48 * 0.52 + 0.31),
         };
         let recoil_drop = self.visual_recoil * 0.045;
         let reload_drop = if self.reload_remaining > 0.0 {
@@ -197,7 +199,7 @@ impl Weapon {
             0.0
         };
         let hip_base_y = -0.7 + weapon_y_offset - recoil_drop - reload_drop;
-        let ads_raise = (0.7 - muzzle_height) * progress;
+        let ads_raise = (0.7 - sight_height) * progress;
         let center_x = 0.36 * (1.0 - progress);
         let base_y = hip_base_y + ads_raise;
         WeaponViewModelLayout {
@@ -205,6 +207,7 @@ impl Weapon {
             base_y,
             body_width,
             body_height,
+            sight_screen: Vec2::new(center_x, base_y + sight_height),
             muzzle_screen: Vec2::new(center_x, base_y + muzzle_height),
         }
     }
