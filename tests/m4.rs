@@ -127,6 +127,25 @@ fn weapon_models_use_a_compact_mesh_and_keep_the_muzzle_anchor() {
 }
 
 #[test]
+fn standard_reticle_is_hidden_while_ads_is_active() {
+    let mut loadout = Loadout::default();
+    loadout.advance(0.32, false);
+    let combat = liteweight_fps::simulation::combat::Combat::default();
+    let mut has_center_reticle = |progress| {
+        loadout.active_mut().ads_progress = progress;
+        let mesh = liteweight_fps::ui::hud_mesh(loadout.active(), &combat, 16.0 / 9.0, 0.0);
+        mesh.vertices.iter().any(|vertex| {
+            vertex.color == [0.9, 0.9, 0.9, 1.0]
+                && vertex.position[0].abs() < 0.02
+                && vertex.position[1].abs() < 0.02
+        })
+    };
+    assert!(has_center_reticle(0.0));
+    assert!(!has_center_reticle(0.5));
+    assert!(!has_center_reticle(1.0));
+}
+
+#[test]
 fn sniper_ads_fov_change_does_not_move_or_pitch_the_player_camera() {
     let mut player = liteweight_fps::simulation::Player::new();
     player.look(0.3, 0.2);

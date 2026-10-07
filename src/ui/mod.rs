@@ -1406,28 +1406,30 @@ pub fn hud_mesh_with_menu(
     if weapon.kind == WeaponKind::Sniper {
         scope_picture(&mut m, aspect, weapon.ads_progress);
     }
-    let gap = 0.008 + weapon.spread(false) * 1.4;
-    for sign in [-1., 1.] {
-        rect(
-            &mut m,
-            sign * gap - 0.006,
-            -0.0015,
-            0.012,
-            0.003,
-            [0.9; 3],
-            aspect,
-        );
-        rect(
-            &mut m,
-            -0.0015,
-            sign * gap - 0.006,
-            0.003,
-            0.012,
-            [0.9; 3],
-            aspect,
-        );
+    if weapon.ads_progress <= f32::EPSILON {
+        let gap = 0.008 + weapon.spread(false) * 1.4;
+        for sign in [-1., 1.] {
+            rect(
+                &mut m,
+                sign * gap - 0.006,
+                -0.0015,
+                0.012,
+                0.003,
+                [0.9; 3],
+                aspect,
+            );
+            rect(
+                &mut m,
+                -0.0015,
+                sign * gap - 0.006,
+                0.003,
+                0.012,
+                [0.9; 3],
+                aspect,
+            );
+        }
+        rect(&mut m, -0.002, -0.002, 0.004, 0.004, [1.; 3], aspect);
     }
-    rect(&mut m, -0.002, -0.002, 0.004, 0.004, [1.; 3], aspect);
     if combat.feedback > 0.0 && combat.last_shot.hit {
         let color = if combat.last_shot.killed {
             [1.0, 0.05, 0.06]
