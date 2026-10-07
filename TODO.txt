@@ -1,4 +1,3 @@
 [idea] BOTの数とmapの大きさをスケールさせる
 [idea] tracking aimがより楽しめるような仕様にする
-[bug] スナイパーのADS時に画面四隅が暗くならない
 [feedback] 壁と障害物の高さを上げる

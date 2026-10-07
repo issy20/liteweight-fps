@@ -1156,9 +1156,27 @@ fn scope_shadow(mesh: &mut Scene, aspect: f32, state: ScopeVisualState) {
     let shadow_peak_width = SCOPE_MAX_SHADOW_WIDTH * 0.25;
     let inner_opacity =
         SCOPE_SHADOW_PEAK_ALPHA * (state.shadow_width / shadow_peak_width).clamp(0.0, 1.0);
-    for i in 0..SCOPE_SHADOW_SEGMENTS {
-        let a0 = i as f32 * std::f32::consts::TAU / SCOPE_SHADOW_SEGMENTS as f32;
-        let a1 = (i + 1) as f32 * std::f32::consts::TAU / SCOPE_SHADOW_SEGMENTS as f32;
+    let mut angles: Vec<f32> = (0..SCOPE_SHADOW_SEGMENTS)
+        .map(|i| i as f32 * std::f32::consts::TAU / SCOPE_SHADOW_SEGMENTS as f32)
+        .collect();
+    let right_corner_angle = 1.0_f32.atan2(aspect - state.center_x);
+    let left_corner_angle = 1.0_f32.atan2(aspect + state.center_x);
+    angles.extend([
+        right_corner_angle,
+        std::f32::consts::PI - left_corner_angle,
+        std::f32::consts::PI + left_corner_angle,
+        std::f32::consts::TAU - right_corner_angle,
+    ]);
+    angles.sort_by(f32::total_cmp);
+    angles.dedup_by(|a, b| (*a - *b).abs() < 1e-5);
+
+    for i in 0..angles.len() {
+        let a0 = angles[i];
+        let a1 = if i + 1 < angles.len() {
+            angles[i + 1]
+        } else {
+            angles[0] + std::f32::consts::TAU
+        };
         let point = |angle: f32| {
             let c = angle.cos();
             let s = angle.sin();
@@ -1657,7 +1675,7 @@ mod tests {
             16.0 / 9.0,
             ScopeVisualState::from_progress(1.0),
         );
-        assert_eq!(aligned.vertices.len(), SCOPE_SHADOW_SEGMENTS * 4);
+        assert_eq!(aligned.vertices.len(), (SCOPE_SHADOW_SEGMENTS + 4) * 4);
         assert!((aligned.vertices[0].position[0] - SCOPE_MAX_RADIUS / (16.0 / 9.0)).abs() < 1e-5);
         assert!(aligned.vertices[0].color[3] > 0.95);
 
@@ -1666,7 +1684,7 @@ mod tests {
             indices: Vec::new(),
         };
         scope_shadow(&mut early, 16.0 / 9.0, ScopeVisualState::from_progress(0.3));
-        assert_eq!(early.vertices.len(), SCOPE_SHADOW_SEGMENTS * 4);
+        assert_eq!(early.vertices.len(), (SCOPE_SHADOW_SEGMENTS + 4) * 4);
 
         let mut partial = crate::Scene {
             vertices: Vec::new(),
@@ -1677,10 +1695,31 @@ mod tests {
             16.0 / 9.0,
             ScopeVisualState::from_progress(0.5),
         );
-        assert_eq!(partial.vertices.len(), SCOPE_SHADOW_SEGMENTS * 8);
+        assert_eq!(partial.vertices.len(), (SCOPE_SHADOW_SEGMENTS + 4) * 8);
         assert!(partial.vertices[0].color[3] > partial.vertices[1].color[3]);
         assert!(partial.vertices[4].color[3] > 0.0);
         assert_eq!(partial.vertices[4].color[3], partial.vertices[5].color[3]);
+    }
+
+    #[test]
+    fn fully_scoped_peripheral_mask_reaches_all_four_screen_corners() {
+        let aspect = 16.0 / 9.0;
+        for progress in [0.5, 1.0] {
+            let mut mesh = crate::Scene {
+                vertices: Vec::new(),
+                indices: Vec::new(),
+            };
+            scope_shadow(&mut mesh, aspect, ScopeVisualState::from_progress(progress));
+            for corner in [[-1.0, -1.0], [-1.0, 1.0], [1.0, -1.0], [1.0, 1.0]] {
+                assert!(
+                    mesh.vertices.iter().any(|vertex| {
+                        (vertex.position[0] - corner[0]).abs() < 1e-5
+                            && (vertex.position[1] - corner[1]).abs() < 1e-5
+                    }),
+                    "peripheral mask at {progress} ADS must reach corner {corner:?}"
+                );
+            }
+        }
     }
 
     #[test]
