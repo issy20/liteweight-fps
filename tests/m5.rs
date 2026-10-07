@@ -119,6 +119,29 @@ fn respawn_does_not_overlap_other_live_bots_and_dead_bot_is_not_rendered() {
 }
 
 #[test]
+fn repeated_respawns_cycle_across_the_arena_instead_of_clustering_near_the_player() {
+    let mut combat = Combat::new(vec![Bot::new(Vec3::new(0.0, 0.0, -5.0))]);
+    let mut positions = Vec::new();
+    for _ in 0..8 {
+        combat.targets[0].apply_damage(100);
+        combat.advance(BOT_RESPAWN_SECONDS + 0.01, Vec3::ZERO, &[]);
+        positions.push(combat.targets[0].position);
+    }
+
+    let span = |component: fn(Vec3) -> f32| {
+        let (min, max) = positions
+            .iter()
+            .map(|position| component(*position))
+            .fold((f32::INFINITY, f32::NEG_INFINITY), |(min, max), value| {
+                (min.min(value), max.max(value))
+            });
+        max - min
+    };
+    assert!(span(|position| position.x) >= 30.0);
+    assert!(span(|position| position.z) >= 30.0);
+}
+
+#[test]
 fn bot_render_mesh_is_a_faceless_mannequin_with_clear_head_accent() {
     let combat = Combat::new(vec![Bot::new(Vec3::new(0.0, 0.0, -5.0))]);
     let mesh = liteweight_fps::ui::world_mesh(&combat);
@@ -313,17 +336,17 @@ fn mannequin_uses_short_neck_and_longer_legs() {
 }
 
 #[test]
-fn ten_bot_render_mesh_stays_within_renderer_buffer_limits() {
-    let bots = (0..10)
+fn twenty_bot_render_mesh_stays_within_renderer_buffer_limits() {
+    let bots = (0..20)
         .map(|slot| Bot::new(Vec3::new(slot as f32 * 3.0, 0.0, -5.0 - slot as f32)))
         .collect();
     let mesh = liteweight_fps::ui::world_mesh(&Combat::new(bots));
-    assert!(mesh.vertices.len() <= 4096);
+    assert!(mesh.vertices.len() <= 8192);
     assert!(
         mesh.indices.len() > 4096,
         "test should exercise a multi-BOT mesh"
     );
-    assert!(mesh.indices.len() <= 16384);
+    assert!(mesh.indices.len() <= 32768);
 }
 
 #[test]

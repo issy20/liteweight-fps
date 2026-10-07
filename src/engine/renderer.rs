@@ -525,10 +525,10 @@ impl DynamicMesh {
         };
         let vertex = buffer(
             "dynamic vertices",
-            4096 * std::mem::size_of::<Vertex>() as u64,
+            8192 * std::mem::size_of::<Vertex>() as u64,
             wgpu::BufferUsages::VERTEX,
         );
-        let index = buffer("dynamic indices", 16384 * 2, wgpu::BufferUsages::INDEX);
+        let index = buffer("dynamic indices", 32768 * 2, wgpu::BufferUsages::INDEX);
         let uniform = buffer("dynamic matrix", 64, wgpu::BufferUsages::UNIFORM);
         let bind = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: None,
@@ -547,7 +547,7 @@ impl DynamicMesh {
         }
     }
     fn upload(&mut self, queue: &wgpu::Queue, mesh: &Scene) {
-        assert!(mesh.vertices.len() <= 4096 && mesh.indices.len() <= 16384);
+        assert!(mesh.vertices.len() <= 8192 && mesh.indices.len() <= 32768);
         self.count = mesh.indices.len() as u32;
         if self.count > 0 {
             let upload_indices = aligned_indices(&mesh.indices);

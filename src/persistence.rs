@@ -106,7 +106,7 @@ impl GameSettings {
         } else if setting == 2 {
             self.fov = (self.fov + direction).clamp(60.0, 120.0);
         } else if setting == 3 {
-            self.bot_count = (self.bot_count as f32 + direction.signum()).clamp(1.0, 10.0) as u32;
+            self.bot_count = (self.bot_count as f32 + direction.signum()).clamp(1.0, 20.0) as u32;
         } else if setting == 4 && direction != 0.0 {
             self.bot_behavior =
                 match (self.bot_behavior as i8 + direction.signum() as i8).rem_euclid(4) {
@@ -136,7 +136,7 @@ impl GameSettings {
             || !(0.1..=1.0).contains(&settings.ads_sensitivity)
             || !(60.0..=120.0).contains(&settings.fov)
             || !(0.0..=1.0).contains(&settings.volume)
-            || !(1..=10).contains(&settings.bot_count)
+            || !(1..=20).contains(&settings.bot_count)
             || settings.bot_behavior > 3
             || !(50..=200).contains(&settings.bot_hp)
             || !(0.5..=2.0).contains(&settings.bot_speed)

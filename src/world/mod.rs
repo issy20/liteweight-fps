@@ -48,14 +48,14 @@ pub fn arena() -> Scene {
     arena_scaled(1.0)
 }
 
-/// BOT数1〜10に合わせて、50m角を34m〜70mへ水平スケールする。
+/// BOT数1〜20に合わせて、50m角を34m〜110mへ水平スケールする。
 pub fn arena_scale_for_bot_count(count: u32) -> f32 {
-    0.68 + (count.clamp(1, 10) - 1) as f32 * 0.08
+    0.68 + (count.clamp(1, 20) - 1) as f32 * 0.08
 }
 
 pub fn arena_scaled(scale: f32) -> Scene {
     let scale = if scale.is_finite() {
-        scale.clamp(0.68, 1.4)
+        scale.clamp(0.68, 2.2)
     } else {
         1.0
     };
@@ -116,7 +116,7 @@ pub fn arena_colliders() -> Vec<Aabb> {
 
 pub fn arena_colliders_scaled(scale: f32) -> Vec<Aabb> {
     let scale = if scale.is_finite() {
-        scale.clamp(0.68, 1.4)
+        scale.clamp(0.68, 2.2)
     } else {
         1.0
     };

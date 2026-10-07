@@ -7,7 +7,7 @@ use glam::Vec3;
 pub use crate::simulation::bot::{Bot, BotBehavior, BOT_MIN_RESPAWN_DISTANCE, BOT_RESPAWN_SECONDS};
 pub type Target = Bot;
 
-const RESPAWN_POINTS: [Vec3; 12] = [
+const RESPAWN_POINTS: [Vec3; 36] = [
     Vec3::new(-20.0, 0.0, -20.0),
     Vec3::new(0.0, 0.0, -20.0),
     Vec3::new(20.0, 0.0, -20.0),
@@ -20,6 +20,30 @@ const RESPAWN_POINTS: [Vec3; 12] = [
     Vec3::new(20.0, 0.0, -12.0),
     Vec3::new(-20.0, 0.0, 12.0),
     Vec3::new(20.0, 0.0, 12.0),
+    Vec3::new(-12.0, 0.0, -20.0),
+    Vec3::new(12.0, 0.0, -20.0),
+    Vec3::new(-12.0, 0.0, 20.0),
+    Vec3::new(12.0, 0.0, 20.0),
+    Vec3::new(-12.0, 0.0, -12.0),
+    Vec3::new(12.0, 0.0, -12.0),
+    Vec3::new(-12.0, 0.0, 12.0),
+    Vec3::new(12.0, 0.0, 12.0),
+    Vec3::new(0.0, 0.0, -12.0),
+    Vec3::new(0.0, 0.0, 12.0),
+    Vec3::new(-12.0, 0.0, 0.0),
+    Vec3::new(12.0, 0.0, 0.0),
+    Vec3::new(-22.0, 0.0, -22.0),
+    Vec3::new(0.0, 0.0, -22.0),
+    Vec3::new(22.0, 0.0, -22.0),
+    Vec3::new(-22.0, 0.0, 22.0),
+    Vec3::new(0.0, 0.0, 22.0),
+    Vec3::new(22.0, 0.0, 22.0),
+    Vec3::new(-22.0, 0.0, -11.0),
+    Vec3::new(22.0, 0.0, -11.0),
+    Vec3::new(-22.0, 0.0, 11.0),
+    Vec3::new(22.0, 0.0, 11.0),
+    Vec3::new(-11.0, 0.0, -22.0),
+    Vec3::new(11.0, 0.0, -22.0),
 ];
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -102,7 +126,7 @@ impl Combat {
         arena_scale: f32,
     ) {
         self.arena_scale = if arena_scale.is_finite() {
-            arena_scale.clamp(0.68, 1.4)
+            arena_scale.clamp(0.68, 2.2)
         } else {
             1.0
         };
@@ -126,7 +150,7 @@ impl Combat {
             2 => Some(BotBehavior::Chase),
             _ => None,
         };
-        let count = count.clamp(1, 10) as usize;
+        let count = count.clamp(1, 20) as usize;
         self.targets = (0..count)
             .map(|index| {
                 let position = INITIAL_POSITIONS
@@ -191,8 +215,9 @@ impl Combat {
     ) -> Option<(usize, Vec3)> {
         let eye = player_eye_position(player_position);
         (0..RESPAWN_POINTS.len())
-            .map(|offset| (self.spawn_cursor + offset) % RESPAWN_POINTS.len())
+            .map(|offset| ((self.spawn_cursor + offset) % RESPAWN_POINTS.len(), offset))
             .filter_map(|index| {
+                let (index, offset) = index;
                 let point = RESPAWN_POINTS[index];
                 let position = Vec3::new(
                     point.x * self.arena_scale,
@@ -201,16 +226,13 @@ impl Combat {
                 );
                 (horizontal_distance(position, player_position) >= BOT_MIN_RESPAWN_DISTANCE
                     && self.targets[bot_index].can_spawn_at(position, bot_index, walls, positions))
-                .then_some((index, position))
+                .then_some((index, offset, position))
             })
-            .min_by_key(|(index, position)| {
+            .min_by_key(|(_, offset, position)| {
                 let visible = !line_of_sight_blocked(eye, *position + Vec3::Y, walls);
-                (
-                    visible,
-                    (horizontal_distance(*position, player_position) - 14.0).abs() as u32,
-                    *index,
-                )
+                (visible, *offset)
             })
+            .map(|(index, _, position)| (index, position))
     }
 
     pub fn shoot(&mut self, origin: Vec3, direction: Vec3, walls: &[Aabb], damage: u32) -> Shot {

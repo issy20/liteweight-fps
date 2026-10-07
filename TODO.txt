@@ -1,3 +1,2 @@
-[idea] BOTの数とmapの大きさをスケールさせる
 [idea] tracking aimがより楽しめるような仕様にする
 [feedback] 壁と障害物の高さを上げる

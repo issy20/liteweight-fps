@@ -69,8 +69,10 @@ fn arena_size_scales_with_bot_population_while_default_stays_50_meters() {
     assert_eq!(arena_scale_for_bot_count(5), 1.0);
     assert!(arena_scale_for_bot_count(1) < 1.0);
     assert!(arena_scale_for_bot_count(10) > 1.0);
+    assert!((arena_scale_for_bot_count(20) - 2.2).abs() < f32::EPSILON);
+    assert_eq!(arena_scale_for_bot_count(21), arena_scale_for_bot_count(20));
     let normal = liteweight_fps::world::arena();
-    let large = arena_scaled(arena_scale_for_bot_count(10));
+    let large = arena_scaled(arena_scale_for_bot_count(20));
     let min_z = |mesh: &liteweight_fps::Scene| {
         mesh.vertices
             .iter()
@@ -80,6 +82,6 @@ fn arena_size_scales_with_bot_population_while_default_stays_50_meters() {
     assert_eq!(min_z(&normal), -25.25);
     assert!(min_z(&large) < min_z(&normal));
     assert!(
-        arena_colliders_scaled(1.4)[1].min.x < liteweight_fps::world::arena_colliders()[1].min.x
+        arena_colliders_scaled(2.2)[1].min.x < liteweight_fps::world::arena_colliders()[1].min.x
     );
 }

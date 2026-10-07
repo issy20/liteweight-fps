@@ -15,8 +15,9 @@ fn settings_restore_defaults_for_corrupt_or_out_of_range_values() {
         GameSettings::from_json(r#"{"mouse_sensitivity":99.0,"ads_sensitivity":-1.0,"fov":200.0}"#);
     assert_eq!(out_of_range, GameSettings::default());
     let invalid_bot_config =
-        GameSettings::from_json(r#"{"bot_count":20,"bot_behavior":9,"volume":2.0}"#);
+        GameSettings::from_json(r#"{"bot_count":99,"bot_behavior":9,"volume":2.0}"#);
     assert_eq!(invalid_bot_config, GameSettings::default());
+    assert_eq!(GameSettings::from_json(r#"{"bot_count":20}"#).bot_count, 20);
 }
 
 #[test]
@@ -100,12 +101,25 @@ fn bot_count_behavior_and_volume_settings_are_bounded_and_adjustable() {
     assert_eq!(settings.bot_behavior, 2);
     assert!((settings.volume - 0.65).abs() < f32::EPSILON);
 
-    settings.bot_count = 10;
+    settings.bot_count = 20;
     settings.adjust_setting(3, 1.0);
     settings.volume = 1.0;
     settings.adjust_setting(5, 1.0);
-    assert_eq!(settings.bot_count, 10);
+    assert_eq!(settings.bot_count, 20);
     assert_eq!(settings.volume, 1.0);
+}
+
+#[test]
+fn twenty_bots_can_be_configured_without_overlapping_initial_spawns() {
+    let mut combat = liteweight_fps::simulation::combat::Combat::default();
+    combat.configure_bots_with_arena_scale(20, 3, 100, 1.0, 2.0, 2.2);
+    assert_eq!(combat.targets.len(), 20);
+    assert!(combat.targets.iter().all(|bot| bot.arena_scale == 2.2));
+    for (index, bot) in combat.targets.iter().enumerate() {
+        for other in &combat.targets[index + 1..] {
+            assert!(bot.position.distance(other.position) > 1.0);
+        }
+    }
 }
 
 #[test]
@@ -144,7 +158,7 @@ fn bot_configuration_applies_count_and_selected_behavior_pattern() {
         .iter()
         .all(|bot| { bot.hp == 125 && bot.speed_multiplier == 1.4 && bot.respawn_seconds == 3.5 }));
     combat.configure_bots(99, 2);
-    assert_eq!(combat.targets.len(), 10);
+    assert_eq!(combat.targets.len(), 20);
     assert!(combat
         .targets
         .iter()
