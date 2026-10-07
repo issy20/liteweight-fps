@@ -1,4 +1,4 @@
-use glam::Vec3;
+use glam::{Vec2, Vec3};
 
 /// 発射入力方式。
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -103,6 +103,19 @@ pub struct Weapon {
     pub reload_remaining: f32,
     pub bolt_remaining: f32,
 }
+
+/// Shared screen-space layout for the HUD weapon and its physical firing origin.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct WeaponViewModelLayout {
+    pub center_x: f32,
+    pub base_y: f32,
+    pub body_width: f32,
+    pub body_height: f32,
+    pub muzzle_screen: Vec2,
+}
+
+const VIEW_MODEL_MUZZLE_DEPTH: f32 = 0.65;
+
 impl Default for Weapon {
     fn default() -> Self {
         Self::new(WeaponKind::AssaultRifle, AR)
@@ -170,17 +183,50 @@ impl Weapon {
         let up = right.cross(forward);
         (forward + (right * angle.cos() + up * angle.sin()) * radius).normalize_or_zero()
     }
-    /// 腰撃ち時の画面右下の銃口を返す。ADSでは照準線に近づく。
-    pub fn muzzle_position(&self, eye: Vec3, view_direction: Vec3) -> Vec3 {
+    pub fn view_model_layout(&self, weapon_y_offset: f32) -> WeaponViewModelLayout {
+        let progress = self.ads_progress.clamp(0.0, 1.0);
+        let (body_width, body_height, muzzle_height) = match self.kind {
+            WeaponKind::Pistol => (0.11, 0.28, 0.28 * 0.91 + 0.12),
+            WeaponKind::AssaultRifle => (0.17, 0.4, 0.4 + 0.07 + 0.19),
+            WeaponKind::Sniper => (0.12, 0.48, 0.48 * 0.52 + 0.31),
+        };
+        let recoil_drop = self.visual_recoil * 0.045;
+        let reload_drop = if self.reload_remaining > 0.0 {
+            0.22
+        } else {
+            0.0
+        };
+        let hip_base_y = -0.7 + weapon_y_offset - recoil_drop - reload_drop;
+        let ads_raise = (0.7 - muzzle_height) * progress;
+        let center_x = 0.36 * (1.0 - progress);
+        let base_y = hip_base_y + ads_raise;
+        WeaponViewModelLayout {
+            center_x,
+            base_y,
+            body_width,
+            body_height,
+            muzzle_screen: Vec2::new(center_x, base_y + muzzle_height),
+        }
+    }
+    /// Returns the world-space point corresponding to the rendered barrel tip.
+    pub fn muzzle_position(
+        &self,
+        eye: Vec3,
+        view_direction: Vec3,
+        aspect: f32,
+        fov_degrees: f32,
+        weapon_y_offset: f32,
+    ) -> Vec3 {
         let forward = view_direction.normalize_or_zero();
         let right = forward.cross(Vec3::Y).normalize_or_zero();
         let up = right.cross(forward).normalize_or_zero();
-        let hip_offset = match self.kind {
-            WeaponKind::Pistol => right * 0.20 - up * 0.16 + forward * 0.28,
-            WeaponKind::AssaultRifle => right * 0.31 - up * 0.22 + forward * 0.38,
-            WeaponKind::Sniper => right * 0.34 - up * 0.20 + forward * 0.42,
-        };
-        eye + hip_offset * (1.0 - self.ads_progress.clamp(0.0, 1.0))
+        let layout = self.view_model_layout(weapon_y_offset);
+        let scale = VIEW_MODEL_MUZZLE_DEPTH * (fov_degrees.to_radians() * 0.5).tan();
+        let ndc_x = layout.muzzle_screen.x / aspect.max(f32::EPSILON);
+        let camera_plane_width = aspect.max(f32::EPSILON) * scale;
+        eye + forward * VIEW_MODEL_MUZZLE_DEPTH
+            + right * (ndc_x * camera_plane_width)
+            + up * (layout.muzzle_screen.y * scale)
     }
     pub fn reload(&mut self) -> bool {
         if self.reload_remaining > 0.0

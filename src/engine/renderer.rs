@@ -2,7 +2,19 @@ use super::layout::FrameLayout;
 use super::{text::TextMesh, text_render::TextRenderer};
 use crate::{Scene, Vertex};
 use glam::Mat4;
+use std::borrow::Cow;
 use wgpu::util::DeviceExt;
+
+fn aligned_indices(indices: &[u16]) -> Cow<'_, [u16]> {
+    if indices.len().is_multiple_of(2) {
+        Cow::Borrowed(indices)
+    } else {
+        let mut padded = Vec::with_capacity(indices.len() + 1);
+        padded.extend_from_slice(indices);
+        padded.push(*indices.last().expect("odd index list is non-empty"));
+        Cow::Owned(padded)
+    }
+}
 
 struct Targets {
     color: wgpu::Texture,
@@ -315,13 +327,19 @@ impl SceneRenderer {
         {
             return Err("シーンの頂点・インデックスが不正です".into());
         }
+        let upload_indices = aligned_indices(&mesh.indices);
         if bytemuck::cast_slice::<Vertex, u8>(&mesh.vertices).len() as u64 > self.vertex.size()
-            || bytemuck::cast_slice::<u16, u8>(&mesh.indices).len() as u64 > self.index.size()
+            || bytemuck::cast_slice::<u16, u8>(upload_indices.as_ref()).len() as u64
+                > self.index.size()
         {
             return Err("更新後のシーンがGPUバッファ容量を超えています".into());
         }
         queue.write_buffer(&self.vertex, 0, bytemuck::cast_slice(&mesh.vertices));
-        queue.write_buffer(&self.index, 0, bytemuck::cast_slice(&mesh.indices));
+        queue.write_buffer(
+            &self.index,
+            0,
+            bytemuck::cast_slice(upload_indices.as_ref()),
+        );
         self.count = mesh.indices.len() as u32;
         Ok(())
     }
@@ -532,8 +550,31 @@ impl DynamicMesh {
         assert!(mesh.vertices.len() <= 4096 && mesh.indices.len() <= 16384);
         self.count = mesh.indices.len() as u32;
         if self.count > 0 {
+            let upload_indices = aligned_indices(&mesh.indices);
             queue.write_buffer(&self.vertex, 0, bytemuck::cast_slice(&mesh.vertices));
-            queue.write_buffer(&self.index, 0, bytemuck::cast_slice(&mesh.indices));
+            queue.write_buffer(
+                &self.index,
+                0,
+                bytemuck::cast_slice(upload_indices.as_ref()),
+            );
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::aligned_indices;
+    use std::borrow::Cow;
+
+    #[test]
+    fn index_uploads_pad_odd_u16_counts_to_copy_alignment() {
+        let indices = [2, 5, 7];
+        assert_eq!(aligned_indices(&indices).as_ref(), &[2, 5, 7, 7]);
+    }
+
+    #[test]
+    fn index_uploads_borrow_already_aligned_data() {
+        let indices = [2, 5, 7, 9];
+        assert!(matches!(aligned_indices(&indices), Cow::Borrowed(_)));
     }
 }

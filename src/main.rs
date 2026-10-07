@@ -82,10 +82,23 @@ impl App {
             self.weapons
                 .active()
                 .spread_direction(view_direction, moving, self.combat.shots);
-        let muzzle = self
-            .weapons
-            .active()
-            .muzzle_position(self.player.position, view_direction);
+        let (aspect, weapon_y_offset) = self
+            .renderer
+            .as_ref()
+            .map(|renderer| {
+                let (width, height) = renderer.internal_size();
+                let (_, offset) = self.weapons.presentation();
+                (width as f32 / height.max(1) as f32, offset)
+            })
+            .unwrap_or((16.0 / 9.0, 0.0));
+        let fov = self.weapons.fov_with_base(self.settings.fov);
+        let muzzle = self.weapons.active().muzzle_position(
+            self.player.position,
+            view_direction,
+            aspect,
+            fov,
+            weapon_y_offset,
+        );
         let shot = self.combat.shoot_from_muzzle_with_aim(
             self.player.position,
             muzzle,

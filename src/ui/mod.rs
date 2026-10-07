@@ -336,6 +336,82 @@ fn tapered_rect(mesh: &mut Scene, shape: [f32; 5], color: [f32; 3], aspect: f32)
         .extend([base, base + 1, base + 2, base, base + 2, base + 3]);
 }
 
+fn quad(mesh: &mut Scene, points: [[f32; 2]; 4], color: [f32; 3], aspect: f32) {
+    let base = mesh.vertices.len() as u16;
+    for point in points {
+        mesh.vertices.push(Vertex {
+            position: [point[0] / aspect, point[1], 0.0],
+            color: [color[0], color[1], color[2], 1.0],
+        });
+    }
+    mesh.indices
+        .extend([base, base + 1, base + 2, base, base + 2, base + 3]);
+}
+
+fn extruded_tapered_rect(mesh: &mut Scene, shape: [f32; 5], color: [f32; 3], aspect: f32) {
+    let [x, y, bottom_width, top_width, height] = shape;
+    let depth = [0.022, 0.014];
+    quad(
+        mesh,
+        [
+            [x + bottom_width * 0.5, y],
+            [x + bottom_width * 0.5 + depth[0], y + depth[1]],
+            [x + top_width * 0.5 + depth[0], y + height + depth[1]],
+            [x + top_width * 0.5, y + height],
+        ],
+        [0.07, 0.09, 0.11],
+        aspect,
+    );
+    tapered_rect(mesh, shape, color, aspect);
+    quad(
+        mesh,
+        [
+            [x - bottom_width * 0.5, y],
+            [x - bottom_width * 0.5 + 0.008, y],
+            [x - top_width * 0.5 + 0.008, y + height],
+            [x - top_width * 0.5, y + height],
+        ],
+        [0.46, 0.49, 0.52],
+        aspect,
+    );
+}
+
+fn triangle(
+    mesh: &mut Scene,
+    tip: [f32; 2],
+    left: [f32; 2],
+    right: [f32; 2],
+    color: [f32; 3],
+    aspect: f32,
+) {
+    let base = mesh.vertices.len() as u16;
+    for point in [tip, left, right] {
+        mesh.vertices.push(Vertex {
+            position: [point[0] / aspect, point[1], 0.0],
+            color: [color[0], color[1], color[2], 1.0],
+        });
+    }
+    mesh.indices.extend([base, base + 1, base + 2]);
+}
+
+fn slanted_rect(mesh: &mut Scene, shape: [f32; 6], color: [f32; 3], aspect: f32) {
+    let [bottom_x, y, bottom_width, top_width, height, top_shift] = shape;
+    let base = mesh.vertices.len() as u16;
+    for (x, y) in [
+        (bottom_x - bottom_width * 0.5, y),
+        (bottom_x + bottom_width * 0.5, y),
+        (bottom_x + top_shift + top_width * 0.5, y + height),
+        (bottom_x + top_shift - top_width * 0.5, y + height),
+    ] {
+        mesh.vertices.push(Vertex {
+            position: [x / aspect, y, 0.0],
+            color: [color[0], color[1], color[2], 1.0],
+        });
+    }
+    mesh.indices
+        .extend([base, base + 1, base + 2, base, base + 2, base + 3]);
+}
+
 fn rect_alpha(mesh: &mut Scene, x: f32, y: f32, w: f32, h: f32, color: [f32; 4], aspect: f32) {
     let base = mesh.vertices.len() as u16;
     for (dx, dy) in [(0., 0.), (w, 0.), (w, h), (0., h)] {
@@ -1206,25 +1282,20 @@ pub fn hud_mesh_with_menu(
     };
     // 武器はADS中も表示し続け、サイトピクチャーを別の軽量2Dメッシュで重ねる。
     {
+        let layout = weapon.view_model_layout(weapon_y_offset);
         let (body_w, body_h, color) = match weapon.kind {
-            WeaponKind::Pistol => (0.11, 0.28, [0.2, 0.22, 0.25]),
-            WeaponKind::AssaultRifle => (0.17, 0.4, [0.13, 0.16, 0.19]),
-            WeaponKind::Sniper => (0.12, 0.48, [0.16, 0.19, 0.22]),
+            WeaponKind::Pistol => (layout.body_width, layout.body_height, [0.2, 0.22, 0.25]),
+            WeaponKind::AssaultRifle => (layout.body_width, layout.body_height, [0.13, 0.16, 0.19]),
+            WeaponKind::Sniper => (layout.body_width, layout.body_height, [0.16, 0.19, 0.22]),
         };
-        let x = 0.36 * (1. - weapon.ads_progress);
-        let y = -0.7 + weapon_y_offset
-            - weapon.visual_recoil * 0.045
-            - if weapon.reload_remaining > 0.0 {
-                0.22
-            } else {
-                0.0
-            };
+        let x = layout.center_x;
+        let y = layout.base_y;
         let top_width = match weapon.kind {
             WeaponKind::Pistol => body_w * 0.82,
             WeaponKind::AssaultRifle => body_w * 0.72,
             WeaponKind::Sniper => body_w * 0.58,
         };
-        tapered_rect(&mut m, [x, y, body_w, top_width, body_h], color, aspect);
+        extruded_tapered_rect(&mut m, [x, y, body_w, top_width, body_h], color, aspect);
         rect(
             &mut m,
             x - 0.04,
@@ -1236,9 +1307,9 @@ pub fn hud_mesh_with_menu(
         );
         match weapon.kind {
             WeaponKind::Pistol => {
-                tapered_rect(
+                slanted_rect(
                     &mut m,
-                    [x, y - 0.09, 0.047, 0.036, 0.13],
+                    [x + 0.014, y - 0.10, 0.052, 0.034, 0.15, -0.025],
                     [0.12, 0.14, 0.16],
                     aspect,
                 );
@@ -1269,6 +1340,13 @@ pub fn hud_mesh_with_menu(
                     [0.12, 0.14, 0.16],
                     aspect,
                 ); // grip
+                for (start, end) in [
+                    ([x - 0.003, y + 0.01], [x + 0.028, y + 0.00]),
+                    ([x + 0.028, y + 0.00], [x + 0.035, y + 0.065]),
+                    ([x + 0.035, y + 0.065], [x + 0.004, y + 0.075]),
+                ] {
+                    stroke_segment(&mut m, start, end, 0.009, [0.42, 0.44, 0.45], aspect);
+                }
                 for rib in 0..4 {
                     rect(
                         &mut m,
@@ -1291,9 +1369,9 @@ pub fn hud_mesh_with_menu(
                 ); // front sight
             }
             WeaponKind::AssaultRifle => {
-                tapered_rect(
+                slanted_rect(
                     &mut m,
-                    [x - 0.105, y + 0.06, 0.055, 0.035, 0.15],
+                    [x - 0.105, y + 0.04, 0.062, 0.038, 0.17, -0.025],
                     [0.24, 0.27, 0.3],
                     aspect,
                 ); // stock
@@ -1306,12 +1384,9 @@ pub fn hud_mesh_with_menu(
                     [0.36, 0.38, 0.4],
                     aspect,
                 ); // barrel
-                rect(
+                tapered_rect(
                     &mut m,
-                    x - 0.07,
-                    y + 0.11,
-                    0.14,
-                    0.12,
+                    [x - 0.07, y + 0.1, 0.15, 0.12, 0.17],
                     [0.28, 0.31, 0.34],
                     aspect,
                 ); // handguard
@@ -1326,12 +1401,9 @@ pub fn hud_mesh_with_menu(
                         aspect,
                     );
                 }
-                rect(
+                slanted_rect(
                     &mut m,
-                    x - 0.036,
-                    y - 0.15,
-                    0.072,
-                    0.18,
+                    [x - 0.005, y - 0.15, 0.072, 0.055, 0.18, -0.035],
                     [0.18, 0.21, 0.23],
                     aspect,
                 ); // magazine
@@ -1355,9 +1427,9 @@ pub fn hud_mesh_with_menu(
                 );
             }
             WeaponKind::Sniper => {
-                tapered_rect(
+                slanted_rect(
                     &mut m,
-                    [x, y - 0.13, 0.05, 0.032, 0.16],
+                    [x, y - 0.13, 0.058, 0.038, 0.17, -0.025],
                     [0.12, 0.14, 0.17],
                     aspect,
                 );
@@ -1417,13 +1489,28 @@ pub fn hud_mesh_with_menu(
                 ); // magazine
             }
         }
+        // The highlighted barrel aperture marks the same point used as the ray origin.
+        triangle(
+            &mut m,
+            layout.muzzle_screen.to_array(),
+            [
+                layout.muzzle_screen.x - 0.014,
+                layout.muzzle_screen.y - 0.026,
+            ],
+            [
+                layout.muzzle_screen.x + 0.014,
+                layout.muzzle_screen.y - 0.026,
+            ],
+            [0.58, 0.62, 0.64],
+            aspect,
+        );
         if combat.feedback > 0.075 {
             rect(
                 &mut m,
-                x - 0.035,
-                y + body_h + 0.18,
-                0.07,
-                0.055,
+                layout.muzzle_screen.x - 0.025,
+                layout.muzzle_screen.y + 0.01,
+                0.05,
+                0.045,
                 [1., 0.8, 0.2],
                 aspect,
             );

@@ -24,6 +24,81 @@ fn ar_and_pistol_ads_use_a_less_magnified_view_than_the_initial_tuning() {
 }
 
 #[test]
+fn ballistic_muzzle_projects_to_the_visible_weapon_muzzle_in_hip_and_ads() {
+    let aspect = 16.0 / 9.0;
+    let player = liteweight_fps::simulation::Player::new();
+    let view = player.aim_direction();
+    let mut loadout = Loadout::default();
+    for kind in [
+        WeaponKind::AssaultRifle,
+        WeaponKind::Pistol,
+        WeaponKind::Sniper,
+    ] {
+        loadout.switch(kind);
+        loadout.advance(0.32, false);
+        for progress in [0.0, 0.5, 1.0] {
+            loadout.active_mut().ads_progress = progress;
+            let weapon = loadout.active();
+            let fov = kind.fov_with_base(90.0, progress);
+            let layout = weapon.view_model_layout(0.0);
+            let muzzle = weapon.muzzle_position(player.position, view, aspect, fov, 0.0);
+            let projected = player.view_matrix_with(aspect, fov).project_point3(muzzle);
+            assert!((projected.x - layout.muzzle_screen.x / aspect).abs() < 1e-5);
+            assert!((projected.y - layout.muzzle_screen.y).abs() < 1e-5);
+        }
+    }
+}
+
+#[test]
+fn rendered_muzzle_tip_uses_the_same_anchor_as_the_shot_origin() {
+    let aspect = 16.0 / 9.0;
+    let mut loadout = Loadout::default();
+    let combat = liteweight_fps::simulation::combat::Combat::default();
+    for kind in [
+        WeaponKind::AssaultRifle,
+        WeaponKind::Pistol,
+        WeaponKind::Sniper,
+    ] {
+        loadout.switch(kind);
+        loadout.advance(0.32, false);
+        for progress in [0.0, 0.6, 1.0] {
+            loadout.active_mut().ads_progress = progress;
+            let weapon = loadout.active();
+            let layout = weapon.view_model_layout(0.0);
+            let mesh = liteweight_fps::ui::hud_mesh(weapon, &combat, aspect, 0.0);
+            assert!(mesh.vertices.iter().any(|vertex| {
+                (vertex.position[0] - layout.muzzle_screen.x / aspect).abs() < 1e-6
+                    && (vertex.position[1] - layout.muzzle_screen.y).abs() < 1e-6
+            }));
+        }
+    }
+}
+
+#[test]
+fn weapon_meshes_include_highlight_and_side_facet_shading() {
+    let aspect = 16.0 / 9.0;
+    let mut loadout = Loadout::default();
+    let combat = liteweight_fps::simulation::combat::Combat::default();
+    for kind in [
+        WeaponKind::AssaultRifle,
+        WeaponKind::Pistol,
+        WeaponKind::Sniper,
+    ] {
+        loadout.switch(kind);
+        loadout.advance(0.32, false);
+        let mesh = liteweight_fps::ui::hud_mesh(loadout.active(), &combat, aspect, 0.0);
+        assert!(mesh
+            .vertices
+            .iter()
+            .any(|vertex| vertex.color == [0.46, 0.49, 0.52, 1.0]));
+        assert!(mesh
+            .vertices
+            .iter()
+            .any(|vertex| vertex.color == [0.07, 0.09, 0.11, 1.0]));
+    }
+}
+
+#[test]
 fn sniper_ads_fov_change_does_not_move_or_pitch_the_player_camera() {
     let mut player = liteweight_fps::simulation::Player::new();
     player.look(0.3, 0.2);
