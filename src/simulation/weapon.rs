@@ -59,7 +59,7 @@ pub const AR: WeaponData = WeaponData {
     ads_out_seconds: 0.18,
     hip_spread: 0.018,
     ads_spread: 0.001,
-    recoil_kick: 0.012,
+    recoil_kick: 0.010,
     mode: FireMode::Automatic,
     bolt_seconds: 0.0,
 };
@@ -89,7 +89,7 @@ pub const SNIPER: WeaponData = WeaponData {
     ads_out_seconds: SNIPER_ADS_OUT_SECONDS,
     hip_spread: 0.0,
     ads_spread: 0.0,
-    recoil_kick: 0.09,
+    recoil_kick: 0.075,
     mode: FireMode::BoltAction,
     bolt_seconds: 1.2,
 };

@@ -68,6 +68,18 @@ fn weapon_visual_recoil_returns_while_view_recoil_stays_and_ads_reduces_spread()
 }
 
 #[test]
+fn ar_and_sniper_recoil_tuning_is_reduced_while_pistol_stays_unchanged() {
+    use liteweight_fps::simulation::weapon::{Loadout, WeaponKind};
+
+    let mut loadout = Loadout::default();
+    assert_eq!(loadout.active().data.recoil_kick, 0.010);
+    loadout.switch(WeaponKind::Sniper);
+    assert_eq!(loadout.active().data.recoil_kick, 0.075);
+    loadout.switch(WeaponKind::Pistol);
+    assert_eq!(loadout.active().data.recoil_kick, 0.045);
+}
+
+#[test]
 fn sustained_infinite_ammo_fire_preserves_cadence_after_many_shots() {
     let mut loadout = liteweight_fps::simulation::weapon::Loadout::default();
     assert!(loadout.fire_with_infinite_ammo(true, false, true));
