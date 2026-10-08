@@ -124,6 +124,17 @@ cargo build --locked --release --bins
 ライブラリ更新時は結果を混ぜずに再計測します。最新バージョンの優劣を示す比較ではありません。
 `block 0.1.6`に上流由来の将来互換性警告があります。現環境のビルド・Clippyエラーではありません。
 
+## M8 Releaseパッケージ
+
+Windows x64、Linux x64、macOS Apple Silicon / Intel向けに、実行ファイルと起動案内をまとめる
+GitHub Actions workflowを用意しています。Releaseパッケージの作成、内容、OS要件は
+[配布手順](DISTRIBUTION.md)、OS別の未検証項目と性能計測の状態は[M8検証計画](docs/m8-plan.md)を参照してください。
+パッケージ生成スクリプトのテストは次で実行できます。
+
+```sh
+python3 -m unittest discover -s scripts -p 'test_*.py'
+```
+
 ## 同一条件での測定
 
 以下のコマンドを**一つずつ**実行します。Windows PowerShellでは

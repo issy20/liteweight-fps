@@ -1,0 +1,53 @@
+name: Release packages
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            package: linux-x86_64
+          - runner: windows-latest
+            target: x86_64-pc-windows-msvc
+            package: windows-x86_64
+          - runner: macos-latest
+            target: aarch64-apple-darwin
+            package: macos-aarch64
+          - runner: macos-latest
+            target: x86_64-apple-darwin
+            package: macos-x86_64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+          targets: ${{ matrix.target }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - name: Linux build prerequisites
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y build-essential pkg-config libasound2-dev libxkbcommon-dev libwayland-dev
+      - run: python -m unittest discover -s scripts -p 'test_*.py'
+      - run: cargo fmt --check
+      - run: cargo clippy --locked --all-targets -- -D warnings
+      - run: cargo test --locked --all-targets
+      - run: cargo build --locked --release --target ${{ matrix.target }} --bin liteweight-fps
+      - name: Package Release binary
+        run: python scripts/package_release.py --target "${{ matrix.target }}" --release-dir "target/${{ matrix.target }}/release" --output-dir dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: liteweight-fps-${{ matrix.package }}
+          path: dist/*
+          if-no-files-found: error
