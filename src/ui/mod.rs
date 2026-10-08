@@ -5,7 +5,7 @@ use crate::engine::text::{FontAtlas, TextMesh};
 use crate::{
     simulation::{
         combat::Combat,
-        weapon::{Weapon, WeaponKind},
+        weapon::{Weapon, WeaponKind, AR},
     },
     Scene, Vertex,
 };
@@ -1670,7 +1670,12 @@ pub fn hud_mesh_with_menu(
         );
     }
     if weapon.ads_progress <= f32::EPSILON {
-        let gap = 0.008 + weapon.spread(false) * 1.4;
+        let reticle_spread = if weapon.kind == WeaponKind::Sniper {
+            AR.hip_spread
+        } else {
+            weapon.spread(false)
+        };
+        let gap = 0.008 + reticle_spread * 1.4;
         for sign in [-1., 1.] {
             rect(
                 &mut m,

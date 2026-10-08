@@ -156,6 +156,31 @@ fn standard_reticle_is_hidden_while_ads_is_active() {
 }
 
 #[test]
+fn unscoped_sniper_reticle_matches_the_assault_rifle_shape() {
+    let mut loadout = Loadout::default();
+    loadout.advance(0.32, false);
+    let combat = liteweight_fps::simulation::combat::Combat::default();
+    let reticle_positions = |kind, loadout: &mut Loadout| {
+        loadout.switch(kind);
+        loadout.advance(0.32, false);
+        liteweight_fps::ui::hud_mesh(loadout.active(), &combat, 16.0 / 9.0, 0.0)
+            .vertices
+            .into_iter()
+            .filter(|vertex| {
+                vertex.color == [0.9, 0.9, 0.9, 1.0]
+                    && vertex.position[0].abs() < 0.05
+                    && vertex.position[1].abs() < 0.05
+            })
+            .map(|vertex| [vertex.position[0], vertex.position[1]])
+            .collect::<Vec<_>>()
+    };
+
+    let ar = reticle_positions(WeaponKind::AssaultRifle, &mut loadout);
+    let sniper = reticle_positions(WeaponKind::Sniper, &mut loadout);
+    assert_eq!(sniper, ar, "hip-fire sniper reticle should match the AR");
+}
+
+#[test]
 fn sniper_scope_model_does_not_cover_the_optical_center() {
     let mut loadout = Loadout::default();
     loadout.switch(WeaponKind::Sniper);
