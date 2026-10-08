@@ -17,6 +17,7 @@ class PackageReleaseTests(unittest.TestCase):
             '[package]\nversion = "0.1.0"\nlicense = "MIT OR Apache-2.0"\n'
         )
         (self.root / 'README.md').write_text('Run the game')
+        (self.root / 'RELEASE_NOTES.md').write_text('Preview notes')
         (self.root / 'DISTRIBUTION.md').write_text('Runtime requirements')
         (self.root / 'LICENSE-MIT').write_text('MIT License')
         (self.root / 'LICENSE-APACHE').write_text('Apache License 2.0')
@@ -46,6 +47,7 @@ class PackageReleaseTests(unittest.TestCase):
             expected = {
                 f'{package_root}/{binary}',
                 f'{package_root}/README.md',
+                f'{package_root}/RELEASE_NOTES.md',
                 f'{package_root}/DISTRIBUTION.md',
                 f'{package_root}/LICENSE-MIT',
                 f'{package_root}/LICENSE-APACHE',

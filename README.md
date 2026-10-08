@@ -132,6 +132,7 @@ cargo build --locked --release --bins
 Windows x64、Linux x64、macOS Apple Silicon / Intel向けに、実行ファイルと起動案内をまとめる
 GitHub Actions workflowを用意しています。Releaseパッケージの作成、内容、OS要件は
 [配布手順](DISTRIBUTION.md)、OS別の未検証項目と性能計測の状態は[M8検証計画](docs/m8-plan.md)を参照してください。
+プレビューの機能と制限は[リリースノート](RELEASE_NOTES.md)を参照してください。RustSec依存監査はCargoファイルの変更時と週次に実行します。
 パッケージ生成スクリプトのテストは次で実行できます。
 
 ```sh

@@ -49,6 +49,7 @@ def create_package(target, project_root, binary_path, output_dir):
     files = [
         (binary_path, binary_path.name),
         (project_root / 'README.md', 'README.md'),
+        (project_root / 'RELEASE_NOTES.md', 'RELEASE_NOTES.md'),
         (project_root / 'DISTRIBUTION.md', 'DISTRIBUTION.md'),
         (project_root / 'LICENSE-MIT', 'LICENSE-MIT'),
         (project_root / 'LICENSE-APACHE', 'LICENSE-APACHE'),

@@ -12,6 +12,9 @@ M8の成果物は、実測に基づく性能レポート、Windows/Linux/macOS�
 - [x] Linux Release jobで動的ライブラリを検査し、Xvfb + Mesaによる起動・終了smoke testを実行する。
 - [x] Cargo.lockの全依存を対象にライセンス表と入手できた本文を生成してパッケージへ同梱する。
 - [x] 未署名・未性能計測の成果物をドラフトの検証用に限定し、性能保証と一般公開を禁止する。
+- [x] 0.1.0プレビューのリリースノートをGitHub Draft Releaseと各パッケージに同梱する。
+- [x] Cargo.lock変更時・週次のRustSec依存監査とCargo/ActionsのDependabot更新を設定する。
+- [x] ドラフトReleaseのパッケージ生成前にもRustSec監査を必須化する。
 - [ ] GitHub Actions実行結果を確認し、4ターゲットのビルド・アーカイブ・ドラフトRelease添付を確認。
 - [ ] ゲーム本体のRelease負荷で5/10/20 BOT、720p/1080p、静止/移動/射撃を測定し、平均FPS、1% Low、p99、メモリを記録。
 - [ ] 可能な実機が得られた場合、Windows/Linux/macOSの起動、マウス捕捉、表示、音声、終了を確認する。現在は実機環境がなく、各OSの実動作を未検証として扱う。
@@ -23,8 +26,9 @@ M8の成果物は、実測に基づく性能レポート、Windows/Linux/macOS�
 ## 今回の実行環境
 
 - ローカル: macOS 15.6.1、Apple M1、Rust 1.98.1、aarch64-apple-darwinのみインストール。
-- Releaseのローカルテスト・ビルドは成功。Apple Silicon向けMach-Oバイナリ（4,814,096 bytes）と配布tar.gz（1,882,287 bytes）を生成し、含まれるファイルを確認。
+- Releaseのローカルテスト・ビルドは成功。今回Apple Silicon向けMach-Oバイナリ（4,814,352 bytes）と配布tar.gz（1,926,134 bytes）を生成し、含まれるファイルを確認。
 - Pythonのパッケージテストは4ターゲットのアーカイブ形式と内容を一時ファイルで検証。
+- RustSec監査では既知の脆弱性は検出されなかった。`paste`と`ttf-parser`に非メンテナンス警告があるため、代替可能性を継続確認する。監査自体はタグReleaseの前提条件。
 - Windows、Linux、Intel Macのクロスビルド・実機操作は未検証。CI workflowを追加したが、GitHub Actions上ではまだ実行していない。
 - 現在のベンチマークはM0シーン用。ゲーム本体のFPS、フレーム時間、メモリは未測定。
 - 以前のローカル`--smoke`実行はmacOS通知サービスのエラー後に終了せず、手動停止した。現在は30秒で失敗終了する上限を追加し、Linux CIではXvfb + Mesaの起動確認を行う。macOS GUI起動は再確認できていない。
