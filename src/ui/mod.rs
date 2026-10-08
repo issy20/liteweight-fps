@@ -1096,6 +1096,7 @@ const SCOPE_RING_SEGMENTS: usize = 32;
 const SCOPE_TICK_SIZE_RATIO: f32 = 0.018;
 const SCOPE_RETICLE_ARM: f32 = 0.07;
 const SCOPE_RETICLE_LINE_RATIO: f32 = 0.0015;
+const SCOPE_RETICLE_APPEAR_START_PROGRESS: f32 = 0.82;
 const SCOPE_REFLECTION_SEGMENTS: usize = 16;
 const SCOPE_REFLECTION_MAX_OPACITY: f32 = 0.055;
 const SCOPE_GLASS_HAZE_SEGMENTS: usize = 32;
@@ -1109,6 +1110,13 @@ const PERIPHERAL_DARKEN_START: f32 = 0.3;
 const PERIPHERAL_DARKEN_CURVE: f32 = 1.5;
 const PERIPHERAL_MAX_OPACITY: f32 = 0.98;
 const SCOPE_SHADOW_PEAK_ALPHA: f32 = 0.65;
+
+fn scope_reticle_opacity(progress: f32) -> f32 {
+    let fade = ((progress.clamp(0.0, 1.0) - SCOPE_RETICLE_APPEAR_START_PROGRESS)
+        / (1.0 - SCOPE_RETICLE_APPEAR_START_PROGRESS))
+        .clamp(0.0, 1.0);
+    fade * fade * (3.0 - 2.0 * fade)
+}
 
 #[derive(Clone, Copy, Debug)]
 struct ScopeVisualState {
@@ -1439,22 +1447,26 @@ fn scope_picture(mesh: &mut Scene, aspect: f32, progress: f32, sight_center: Vec
     }
     let arm = radius.min(SCOPE_MAX_RADIUS) * SCOPE_RETICLE_ARM;
     let line = radius * SCOPE_RETICLE_LINE_RATIO;
-    rect(
+    let reticle_opacity = scope_reticle_opacity(progress);
+    if reticle_opacity <= f32::EPSILON {
+        return;
+    }
+    rect_alpha(
         mesh,
         state.center_x - line * 0.5,
         state.center_y - arm,
         line,
         arm * 2.0,
-        [0.14, 0.16, 0.18],
+        [0.14, 0.16, 0.18, reticle_opacity],
         aspect,
     );
-    rect(
+    rect_alpha(
         mesh,
         state.center_x - arm,
         state.center_y - line * 0.5,
         arm * 2.0,
         line,
-        [0.14, 0.16, 0.18],
+        [0.14, 0.16, 0.18, reticle_opacity],
         aspect,
     );
 }

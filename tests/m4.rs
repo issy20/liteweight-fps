@@ -254,6 +254,28 @@ fn sniper_ads_reticle_stays_compact_and_thin() {
 }
 
 #[test]
+fn sniper_scope_reticle_appears_only_near_the_end_of_ads() {
+    let mut loadout = Loadout::default();
+    loadout.switch(WeaponKind::Sniper);
+    loadout.advance(0.32, false);
+    let combat = liteweight_fps::simulation::combat::Combat::default();
+    let reticle_alpha = |progress: f32, loadout: &mut Loadout| {
+        loadout.active_mut().ads_progress = progress;
+        liteweight_fps::ui::hud_mesh(loadout.active(), &combat, 16.0 / 9.0, 0.0)
+            .vertices
+            .into_iter()
+            .filter(|vertex| vertex.color[..3] == [0.14, 0.16, 0.18])
+            .map(|vertex| vertex.color[3])
+            .fold(0.0_f32, f32::max)
+    };
+
+    assert_eq!(reticle_alpha(0.5, &mut loadout), 0.0);
+    let emerging = reticle_alpha(0.9, &mut loadout);
+    assert!(emerging > 0.0 && emerging < 1.0);
+    assert_eq!(reticle_alpha(1.0, &mut loadout), 1.0);
+}
+
+#[test]
 fn sniper_scope_glass_reflection_fades_in_and_out_during_ads() {
     let mut loadout = Loadout::default();
     loadout.switch(WeaponKind::Sniper);
