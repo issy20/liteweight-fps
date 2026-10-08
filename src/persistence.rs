@@ -1,9 +1,90 @@
 use serde::{Deserialize, Serialize};
-use std::{fs, path::PathBuf};
+use std::{
+    fs::{self, OpenOptions},
+    io::{self, Write},
+    path::{Path, PathBuf},
+    sync::atomic::{AtomicU64, Ordering},
+};
 
 use crate::simulation::game_mode::MatchStats;
 
 pub const MAX_SAVED_RESULTS: usize = 50;
+static TEMP_FILE_SEQUENCE: AtomicU64 = AtomicU64::new(0);
+
+fn write_atomically(path: &Path, temp_path: &Path, data: &[u8]) -> io::Result<()> {
+    let mut temp_file = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(temp_path)?;
+    let result = (|| {
+        temp_file.write_all(data)?;
+        temp_file.sync_all()?;
+        drop(temp_file);
+        replace_file(temp_path, path)
+    })();
+    if result.is_err() {
+        let _ = fs::remove_file(temp_path);
+    }
+    result
+}
+
+#[cfg(not(windows))]
+fn replace_file(source: &Path, destination: &Path) -> io::Result<()> {
+    fs::rename(source, destination)
+}
+
+#[cfg(windows)]
+fn replace_file(source: &Path, destination: &Path) -> io::Result<()> {
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::Storage::FileSystem::{MoveFileExW, MOVEFILE_REPLACE_EXISTING};
+
+    let source: Vec<u16> = source.as_os_str().encode_wide().chain(Some(0)).collect();
+    let destination: Vec<u16> = destination
+        .as_os_str()
+        .encode_wide()
+        .chain(Some(0))
+        .collect();
+    // SAFETY: Both UTF-16 paths are NUL-terminated and remain alive for the call.
+    let moved = unsafe {
+        MoveFileExW(
+            source.as_ptr(),
+            destination.as_ptr(),
+            MOVEFILE_REPLACE_EXISTING,
+        )
+    };
+    if moved == 0 {
+        Err(io::Error::last_os_error())
+    } else {
+        Ok(())
+    }
+}
+
+fn write_file_atomically(path: &Path, data: &[u8]) -> io::Result<()> {
+    let parent = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    let file_name = path.file_name().ok_or_else(|| {
+        io::Error::new(io::ErrorKind::InvalidInput, "destination has no file name")
+    })?;
+    for _ in 0..16 {
+        let sequence = TEMP_FILE_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+        let temp_path = parent.join(format!(
+            ".{}.{}.{}.tmp",
+            file_name.to_string_lossy(),
+            std::process::id(),
+            sequence
+        ));
+        match write_atomically(path, &temp_path, data) {
+            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => continue,
+            result => return result,
+        }
+    }
+    Err(io::Error::new(
+        io::ErrorKind::AlreadyExists,
+        "could not reserve a temporary file for atomic write",
+    ))
+}
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
 pub struct ResultRecord {
@@ -47,7 +128,7 @@ pub fn save_result_to(path: &std::path::Path, record: ResultRecord) -> Result<()
         records.drain(..records.len() - MAX_SAVED_RESULTS);
     }
     let data = serde_json::to_vec_pretty(&records).map_err(|error| error.to_string())?;
-    fs::write(path, data).map_err(|error| error.to_string())
+    write_file_atomically(path, &data).map_err(|error| error.to_string())
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -171,7 +252,7 @@ impl GameSettings {
             .ok_or_else(|| "設定保存先が不正です".to_owned())?;
         fs::create_dir_all(parent).map_err(|e| e.to_string())?;
         let data = serde_json::to_vec_pretty(settings).map_err(|e| e.to_string())?;
-        fs::write(path, data).map_err(|e| e.to_string())
+        write_file_atomically(path, &data).map_err(|e| e.to_string())
     }
 
     fn path() -> Option<PathBuf> {
@@ -210,5 +291,41 @@ mod tests {
         GameSettings::save_to(&path, &settings).unwrap();
         assert_eq!(GameSettings::load_from(&path), settings);
         fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn saving_settings_replaces_an_existing_file() {
+        let path = std::env::temp_dir().join(format!(
+            "liteweight-fps-settings-replace-{}.json",
+            std::process::id()
+        ));
+        let mut settings = GameSettings::default();
+        GameSettings::save_to(&path, &settings).unwrap();
+        settings.mouse_sensitivity = 2.0;
+
+        GameSettings::save_to(&path, &settings).unwrap();
+
+        assert_eq!(GameSettings::load_from(&path).mouse_sensitivity, 2.0);
+        fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn failed_atomic_write_keeps_existing_data_unchanged() {
+        let directory = std::env::temp_dir().join(format!(
+            "liteweight-fps-atomic-write-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&directory);
+        fs::create_dir_all(&directory).unwrap();
+        let destination = directory.join("settings.json");
+        fs::write(&destination, b"previous settings").unwrap();
+        let blocked_temp = directory.join("blocked.tmp");
+        fs::create_dir(&blocked_temp).unwrap();
+
+        let result = super::write_atomically(&destination, &blocked_temp, b"new settings");
+
+        assert!(result.is_err());
+        assert_eq!(fs::read(&destination).unwrap(), b"previous settings");
+        fs::remove_dir_all(directory).unwrap();
     }
 }

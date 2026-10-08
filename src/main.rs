@@ -35,6 +35,7 @@ struct App {
     smoke: bool,
     smoke_step: usize,
     smoke_started: Option<Instant>,
+    smoke_deadline: Instant,
     clock: Instant,
     player: Player,
     colliders: Vec<Aabb>,
@@ -59,6 +60,7 @@ struct App {
     occluded: bool,
     suspended: bool,
     error: Option<String>,
+    notice: Option<(String, Instant)>,
 }
 impl App {
     fn switch_weapon(&mut self, kind: WeaponKind) {
@@ -136,6 +138,16 @@ impl App {
         self.error = Some(message);
         self.finish(event_loop, false);
     }
+    fn set_notice(&mut self, message: &str, detail: &str) {
+        eprintln!("{message}: {detail}");
+        self.notice = Some((message.to_owned(), Instant::now()));
+    }
+    fn save_settings(&mut self) {
+        match self.settings.save() {
+            Ok(()) => self.notice = None,
+            Err(error) => self.set_notice("SETTINGS NOT SAVED - CHECK STORAGE", &error),
+        }
+    }
     /// 捕捉が要求されていれば再試行する。フォーカス確定後に呼ばれる想定。
     fn try_capture(&mut self) {
         if !self.capture_requested || self.captured {
@@ -168,9 +180,7 @@ impl App {
         self.clock = Instant::now();
     }
     fn resume_from_pause(&mut self) {
-        if let Err(error) = self.settings.save() {
-            eprintln!("設定を保存できません: {error}");
-        }
+        self.save_settings();
         self.settings_menu = false;
         if self.settings_from_title {
             self.settings_from_title = false;
@@ -250,7 +260,7 @@ impl App {
         if let Some(r) = &self.renderer {
             let (w, h) = r.internal_size();
             let title = format!(
-                "liteweight-fps M6 | {w}×{h} | {} {}/{} | Bots {}/{} | Kills {} | Hits {}/{} | 1:Pistol 2:AR 3:Sniper LMB:Fire RMB:ADS R:Reload Esc:Settings",
+                "liteweight-fps | {w}×{h} | {} {}/{} | Bots {}/{} | Kills {} | Hits {}/{} | 1:Pistol 2:AR 3:Sniper LMB:Fire RMB:ADS R:Reload Esc:Settings",
                 self.weapons.active().kind.label(), self.weapons.active().ammo, self.weapons.active().data.magazine,
                 self.combat.targets.iter().filter(|bot| bot.alive).count(), self.combat.targets.len(), self.combat.kills,
                 self.combat.hits, self.combat.shots
@@ -273,7 +283,7 @@ impl ApplicationHandler for App {
             return;
         }
         let mut attributes = Window::default_attributes()
-            .with_title("liteweight-fps M6")
+            .with_title("liteweight-fps")
             .with_resizable(self.benchmark.is_none())
             .with_inner_size(LogicalSize::new(960., 540.));
         if self.benchmark.is_none() && self.settings.fullscreen {
@@ -320,7 +330,7 @@ impl ApplicationHandler for App {
                             audio.set_volume(self.settings.volume);
                             self.audio = Some(audio);
                         }
-                        Err(e) => eprintln!("音声なしで続行: {e}"),
+                        Err(e) => self.set_notice("AUDIO UNAVAILABLE - GAME WILL BE SILENT", &e),
                     }
                 }
                 self.smoke_started = Some(Instant::now());
@@ -503,9 +513,7 @@ impl ApplicationHandler for App {
                                         _ => {}
                                     }
                                     if self.pause_selection.toggle_setting_index().is_some() {
-                                        if let Err(error) = self.settings.save() {
-                                            eprintln!("設定を保存できません: {error}");
-                                        }
+                                        self.save_settings();
                                     }
                                 }
                             }
@@ -526,9 +534,7 @@ impl ApplicationHandler for App {
                             if let Some(index) = self.pause_selection.setting_index() {
                                 self.settings.adjust_setting(index, -1.0);
                                 self.apply_runtime_setting(index);
-                                if let Err(error) = self.settings.save() {
-                                    eprintln!("設定を保存できません: {error}");
-                                }
+                                self.save_settings();
                             }
                         }
                         PhysicalKey::Code(KeyCode::ArrowRight)
@@ -537,22 +543,18 @@ impl ApplicationHandler for App {
                             if let Some(index) = self.pause_selection.setting_index() {
                                 self.settings.adjust_setting(index, 1.0);
                                 self.apply_runtime_setting(index);
-                                if let Err(error) = self.settings.save() {
-                                    eprintln!("設定を保存できません: {error}");
-                                }
+                                self.save_settings();
                             }
                         }
                         PhysicalKey::Code(KeyCode::Home)
                             if pressed && !event.repeat && self.settings_menu =>
                         {
                             self.settings = GameSettings::default();
-                            for index in [3, 5, 6, 7, 8] {
+                            for index in [3, 4, 5, 6, 7, 8] {
                                 self.apply_runtime_setting(index);
                             }
                             self.apply_fullscreen();
-                            if let Err(error) = self.settings.save() {
-                                eprintln!("設定を保存できません: {error}");
-                            }
+                            self.save_settings();
                         }
                         PhysicalKey::Code(KeyCode::KeyA)
                             if Input::should_update_movement_key(pressed, gameplay_active) =>
@@ -648,7 +650,7 @@ impl ApplicationHandler for App {
                             if let Err(error) =
                                 liteweight_fps::persistence::save_result(self.session.stats())
                             {
-                                eprintln!("結果を保存できません: {error}");
+                                self.set_notice("RESULTS NOT SAVED - CHECK STORAGE", &error);
                             }
                             self.results_screen = true;
                             self.capture_requested = false;
@@ -666,6 +668,18 @@ impl ApplicationHandler for App {
                 }
                 self.update_title();
                 let infinite_ammo_active = self.infinite_ammo_active();
+                let notice = self
+                    .notice
+                    .as_ref()
+                    .filter(|(_, started)| started.elapsed() < Duration::from_secs(8))
+                    .map(|(message, _)| message.clone());
+                if self
+                    .notice
+                    .as_ref()
+                    .is_some_and(|(_, started)| started.elapsed() >= Duration::from_secs(8))
+                {
+                    self.notice = None;
+                }
                 let r = self.renderer.as_mut().unwrap();
                 let (w, h) = r.internal_size();
                 let matrix = if let Some(run) = &self.benchmark {
@@ -691,7 +705,7 @@ impl ApplicationHandler for App {
                         liteweight_fps::ui::results_overlay(&mut hud, aspect);
                     }
                     r.update_extras(&liteweight_fps::ui::world_mesh(&self.combat), &hud);
-                    let text = if self.title_screen {
+                    let mut text = if self.title_screen {
                         liteweight_fps::ui::title_text(
                             self.title_selection.selected_index(),
                             [w, h],
@@ -719,6 +733,18 @@ impl ApplicationHandler for App {
                             [w, h],
                         )
                     };
+                    if let Some(notice) = &notice {
+                        let notice_y = if self.title_screen {
+                            0.34
+                        } else if self.results_screen {
+                            0.55
+                        } else if self.settings_menu {
+                            0.575
+                        } else {
+                            0.76
+                        };
+                        liteweight_fps::ui::append_notice_text(&mut text, notice, [w, h], notice_y);
+                    }
                     r.update_text(&text);
                     self.player
                         .view_matrix_with(aspect, self.weapons.fov_with_base(self.settings.fov))
@@ -753,6 +779,13 @@ impl ApplicationHandler for App {
         }
     }
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+        if self.smoke && Instant::now() >= self.smoke_deadline {
+            self.fail(
+                event_loop,
+                "smoke test timed out after 30 seconds".to_owned(),
+            );
+            return;
+        }
         if self.smoke {
             if let Some(start) = self.smoke_started {
                 if start.elapsed().as_secs_f64() >= (self.smoke_step + 1) as f64 {
@@ -777,7 +810,7 @@ impl ApplicationHandler for App {
                         self.smoke_step += 1;
                         self.update_title();
                     } else {
-                        println!("M5 smoke completed");
+                        println!("startup smoke completed");
                         self.finish(event_loop, true);
                         return;
                     }
@@ -805,7 +838,7 @@ fn main() {
     let start = Instant::now();
     let args: Vec<_> = std::env::args().skip(1).collect();
     if args == ["--help"] {
-        println!("liteweight-fps M6: タイトル画面でFree Trainingまたは5-Minute Challengeを選択。\nWASD:移動 Shift:ダッシュ Space:ジャンプ LMB:射撃 RMB:ADS R:リロード Esc:ポーズ（メニューから再開・終了）\n--smoke: 自動リサイズ確認後に終了\n--benchmark [M0と同じ引数]: M0シーンで描画基盤の回帰測定（--mode inputは非対応）\n1/2/3:拳銃/AR/スナイパー切替 LMB:射撃 RMB:ADS R:リロード");
+        println!("liteweight-fps: タイトル画面でFree Trainingまたは5-Minute Challengeを選択。\nWASD:移動 Shift:ダッシュ Space:ジャンプ LMB:射撃 RMB:ADS R:リロード Esc:ポーズ（メニューから再開・終了）\n--smoke: 自動リサイズ確認後に終了\n--benchmark [M0と同じ引数]: M0シーンで描画基盤の回帰測定（--mode inputは非対応）\n1/2/3:拳銃/AR/スナイパー切替 LMB:射撃 RMB:ADS R:リロード");
         return;
     }
     let smoke = args == ["--smoke"];
@@ -853,6 +886,7 @@ fn main() {
         smoke,
         smoke_step: 0,
         smoke_started: None,
+        smoke_deadline: start + Duration::from_secs(30),
         clock: Instant::now(),
         player: Player::new(),
         colliders: world::arena_colliders_scaled(arena_scale),
@@ -877,6 +911,7 @@ fn main() {
         occluded: false,
         suspended: false,
         error: None,
+        notice: None,
     };
     if let Err(e) = event_loop.run_app(&mut app) {
         eprintln!("{e}");

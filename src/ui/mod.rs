@@ -1069,6 +1069,29 @@ pub fn game_hud_text(info: GameHudInfo, viewport: [u32; 2]) -> TextMesh {
     mesh
 }
 
+pub fn append_notice_text(mesh: &mut TextMesh, message: &str, viewport: [u32; 2], y_ndc: f32) {
+    if message.is_empty() || viewport[0] == 0 || viewport[1] == 0 {
+        return;
+    }
+    let font = FontAtlas::shared();
+    let font_px = viewport[1] as f32 * 0.032;
+    let measured = font.layout(message, [0.0, 0.0], font_px, viewport, [1.0; 4]);
+    let layout = font.layout(
+        message,
+        [
+            ((viewport[0] as f32 - measured.width_px) * 0.5).max(8.0),
+            (1.0 - y_ndc) * viewport[1] as f32 * 0.5,
+        ],
+        font_px,
+        viewport,
+        [1.0, 0.46, 0.26, 1.0],
+    );
+    let base = mesh.vertices.len() as u16;
+    mesh.vertices.extend(layout.mesh.vertices);
+    mesh.indices
+        .extend(layout.mesh.indices.into_iter().map(|index| base + index));
+}
+
 fn digit(mesh: &mut Scene, n: u32, x: f32, y: f32, aspect: f32) {
     let masks = [
         0b1111110, 0b0110000, 0b1101101, 0b1111001, 0b0110011, 0b1011011, 0b1011111, 0b1110000,
@@ -1754,8 +1777,33 @@ pub fn hud_mesh_with_menu(
 
 #[cfg(test)]
 mod tests {
-    use super::{scope_shadow, settings_overlay, ScopeVisualState, SCOPE_MAX_RADIUS};
+    use super::{
+        append_notice_text, scope_shadow, settings_overlay, ScopeVisualState, SCOPE_MAX_RADIUS,
+    };
+    use crate::engine::text::TextMesh;
     use crate::simulation::weapon::{Weapon, WeaponKind, SNIPER};
+
+    #[test]
+    fn storage_notice_adds_readable_text_to_the_hud_mesh() {
+        let mut mesh = TextMesh::default();
+        append_notice_text(
+            &mut mesh,
+            "SETTINGS NOT SAVED - CHECK STORAGE",
+            [1280, 720],
+            0.575,
+        );
+
+        assert!(!mesh.vertices.is_empty());
+        assert_eq!(mesh.indices.len() % 6, 0);
+        assert!(mesh.vertices.iter().all(|vertex| vertex.color[0] == 1.0));
+        let center_y = mesh
+            .vertices
+            .iter()
+            .map(|vertex| vertex.position[1])
+            .sum::<f32>()
+            / mesh.vertices.len() as f32;
+        assert!((center_y - 0.575).abs() < 0.05);
+    }
 
     fn sniper_scope_state(progress: f32) -> ScopeVisualState {
         let mut weapon = Weapon::new(WeaponKind::Sniper, SNIPER);

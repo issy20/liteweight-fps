@@ -14,7 +14,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - runner: ubuntu-latest
+          - runner: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
             package: linux-x86_64
           - runner: windows-latest
@@ -36,14 +36,32 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.x'
+      - name: Validate release tag
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: python scripts/package_release.py --check-tag "$RELEASE_TAG"
       - name: Linux build prerequisites
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y build-essential pkg-config libasound2-dev libxkbcommon-dev libwayland-dev
+        run: sudo apt-get update && sudo apt-get install -y build-essential pkg-config libasound2-dev libxkbcommon-dev libwayland-dev mesa-vulkan-drivers xvfb
       - run: python -m unittest discover -s scripts -p 'test_*.py'
       - run: cargo fmt --check
       - run: cargo clippy --locked --all-targets -- -D warnings
       - run: cargo test --locked --all-targets
       - run: cargo build --locked --release --target ${{ matrix.target }} --bin liteweight-fps
+      - name: Generate dependency license inventory
+        run: python scripts/dependency_notices.py --output target/THIRD_PARTY_NOTICES.txt
+      - name: Inspect Linux runtime dependencies
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          ldd "target/${{ matrix.target }}/release/liteweight-fps" | tee target/linux-runtime-dependencies.txt
+          if grep -q "not found" target/linux-runtime-dependencies.txt; then exit 1; fi
+      - name: Run a software-rendered Linux startup smoke test
+        if: runner.os == 'Linux'
+        shell: bash
+        run: timeout 35s xvfb-run -a -s "-screen 0 1280x720x24" "target/${{ matrix.target }}/release/liteweight-fps" --smoke
       - name: Package Release binary
         run: python scripts/package_release.py --target "${{ matrix.target }}" --release-dir "target/${{ matrix.target }}/release" --output-dir dist
       - uses: actions/upload-artifact@v4
@@ -51,3 +69,24 @@ jobs:
           name: liteweight-fps-${{ matrix.package }}
           path: dist/*
           if-no-files-found: error
+
+  draft-release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: package
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: liteweight-fps-*
+          path: dist
+          merge-multiple: true
+      - name: Generate checksums
+        working-directory: dist
+        run: sha256sum *.zip *.tar.gz > SHA256SUMS
+      - name: Create draft GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: gh release create "$RELEASE_TAG" --draft --title "$RELEASE_TAG" --generate-notes dist/*

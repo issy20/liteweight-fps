@@ -2,6 +2,7 @@
 name = "liteweight-fps"
 version = "0.1.0"
 edition = "2021"
+license = "MIT OR Apache-2.0"
 default-run = "liteweight-fps"
 
 [dependencies]
@@ -16,6 +17,9 @@ serde_json = "1"
 sysinfo = "0.33"
 wgpu = "24"
 winit = "0.30"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Storage_FileSystem"] }
 
 [profile.release]
 lto = "thin"

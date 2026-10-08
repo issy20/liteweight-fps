@@ -1,4 +1,4 @@
-"""Package one release binary with its operating instructions and font notice."""
+"""Package one release binary with user instructions and required license notices."""
 
 import argparse
 import re
@@ -23,6 +23,17 @@ def package_version(project_root):
     return match.group(1)
 
 
+def validate_release_tag(tag, project_root):
+    version = package_version(project_root)
+    if not tag.startswith('v'):
+        raise ValueError('Release tag must start with v')
+    if tag[1:] != version:
+        raise ValueError(
+            f'Release tag {tag} does not match Cargo.toml version {version}'
+        )
+    return version
+
+
 def create_package(target, project_root, binary_path, output_dir):
     if target not in TARGET_BINARIES:
         raise ValueError(f'Unsupported release target: {target}')
@@ -39,8 +50,18 @@ def create_package(target, project_root, binary_path, output_dir):
         (binary_path, binary_path.name),
         (project_root / 'README.md', 'README.md'),
         (project_root / 'DISTRIBUTION.md', 'DISTRIBUTION.md'),
+        (project_root / 'LICENSE-MIT', 'LICENSE-MIT'),
+        (project_root / 'LICENSE-APACHE', 'LICENSE-APACHE'),
         (project_root / 'assets/fonts/OFL.txt', 'Cantarell-OFL.txt'),
+        (project_root / 'target/THIRD_PARTY_NOTICES.txt', 'THIRD_PARTY_NOTICES.txt'),
     ]
+    if target == 'x86_64-unknown-linux-gnu':
+        files.append(
+            (
+                project_root / 'target/linux-runtime-dependencies.txt',
+                'LINUX_RUNTIME_DEPENDENCIES.txt',
+            )
+        )
     missing = [str(source) for source, _ in files if not source.is_file()]
     if missing:
         raise FileNotFoundError('Required package files are missing: ' + ', '.join(missing))
@@ -66,12 +87,22 @@ def create_package(target, project_root, binary_path, output_dir):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--target', required=True, choices=sorted(TARGET_BINARIES))
+    parser.add_argument('--target', choices=sorted(TARGET_BINARIES))
+    parser.add_argument('--check-tag', help='validate a v-prefixed release tag and exit')
     parser.add_argument('--release-dir', type=Path, default=Path('target/release'))
     parser.add_argument('--output-dir', type=Path, default=Path('dist'))
     args = parser.parse_args()
 
     project_root = Path(__file__).resolve().parents[1]
+    if args.check_tag:
+        try:
+            version = validate_release_tag(args.check_tag, project_root)
+        except ValueError as error:
+            parser.error(str(error))
+        print(f'Release tag matches package version {version}')
+        return
+    if not args.target:
+        parser.error('--target is required unless --check-tag is used')
     binary_path = args.release_dir / TARGET_BINARIES[args.target]
     try:
         archive_path = create_package(

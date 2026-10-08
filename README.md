@@ -1,6 +1,8 @@
 # liteweight-fps
 
-## M6: BOT射撃トレーニング
+本プロジェクトのソースコードは、`LICENSE-MIT`または`LICENSE-APACHE`の条件で利用できます。
+
+## オフラインのBOT射撃トレーニング
 
 wgpu+winitでアリーナを描画するオフラインの一人称BOT射撃ゲームです。
 起動後はタイトル画面でFree Training、5-Minute Challenge、Settingsを選択します。
@@ -17,8 +19,9 @@ BOTは顔のない細身の人体模型です。丸みのある頭・胴体と�
 弾数、照準、ヒットマーカー（白:胴体／黄:頭部／赤:撃破）、被弾反応、マズルフラッシュ、
 着弾表現、武器ごとの簡易モデルと合成効果音を実装しています。
 
-**自動テスト、Clippy、Releaseビルドは確認済みです。Releaseでの手動プレイ確認は未完了です。**
-内部解像度と表示設定は従来どおり固定です。
+**自動テスト、Clippy、Releaseビルドは確認済みです。Releaseでの手動起動確認と他OSでの実動作確認は未完了です。**
+内部描画解像度は1280×720固定です。ウィンドウサイズ変更と設定メニューからのフルスクリーン切替に対応します。
+内蔵GPUを含む実機性能は未測定のため、快適動作やFPSを保証しません。
 
 ```sh
 cargo run --release
@@ -54,7 +57,7 @@ cargo run --release -- --smoke
 
 GPUテストは通常の`cargo test`ではignoreし、GPUを取得できる環境で明示実行します。
 アダプターを取得できなければ失敗として報告し、成功扱いにはしません。
-`--smoke`はAPI上の0サイズも確認しますが、実際の最小化・復帰は別途手動確認が必要です。
+`--smoke`はAPI上の0サイズも確認し、30秒以内に完了しなければ失敗します。実際の最小化・復帰は別途確認が必要です。
 
 - `src/world/`: 静的アリーナとメッシュ。M0のダミー付きシーンも同じ形状を使用。
 - `src/engine/layout.rs`: 内部解像度と表示領域。
@@ -122,7 +125,7 @@ cargo build --locked --release --bins
 
 依存版はCargo.lockに固定しています。wgpu 24 / winit 0.30、Miniquad 0.4.11をこの比較の基準とし、
 ライブラリ更新時は結果を混ぜずに再計測します。最新バージョンの優劣を示す比較ではありません。
-`block 0.1.6`に上流由来の将来互換性警告があります。現環境のビルド・Clippyエラーではありません。
+`block 0.1.6`の上流FFI警告は`vendor/block`の小さな互換パッチで解消しています。詳細は[パッチ記録](vendor/block/PATCHES.md)を参照してください。
 
 ## M8 Releaseパッケージ
 
@@ -133,6 +136,7 @@ GitHub Actions workflowを用意しています。Releaseパッケージの作�
 
 ```sh
 python3 -m unittest discover -s scripts -p 'test_*.py'
+python3 scripts/dependency_notices.py --output target/THIRD_PARTY_NOTICES.txt
 ```
 
 ## 同一条件での測定
