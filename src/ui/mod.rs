@@ -13,11 +13,22 @@ use glam::{Vec2, Vec3};
 
 pub fn world_mesh(combat: &Combat) -> Scene {
     let mut mesh = Scene {
-        vertices: Vec::with_capacity(combat.targets.len() * BOT_VERTEX_CAPACITY + 24),
-        indices: Vec::with_capacity(combat.targets.len() * BOT_INDEX_CAPACITY + 36),
+        vertices: Vec::new(),
+        indices: Vec::new(),
     };
+    world_mesh_into(&mut mesh, combat);
+    mesh
+}
+
+pub fn world_mesh_into(mesh: &mut Scene, combat: &Combat) {
+    mesh.vertices.clear();
+    mesh.indices.clear();
+    mesh.vertices
+        .reserve(combat.targets.len() * BOT_VERTEX_CAPACITY + 24);
+    mesh.indices
+        .reserve(combat.targets.len() * BOT_INDEX_CAPACITY + 36);
     for t in combat.targets.iter().filter(|target| target.alive) {
-        mannequin(&mut mesh, t.position, t.flash > 0.0);
+        mannequin(mesh, t.position, t.flash > 0.0);
     }
     if combat.feedback > 0.0 && combat.last_shot.impact {
         mesh.cube(
@@ -26,7 +37,6 @@ pub fn world_mesh(combat: &Combat) -> Scene {
             [1., 0.9, 0.4],
         );
     }
-    mesh
 }
 
 const BOT_VERTEX_CAPACITY: usize = 256;
@@ -399,6 +409,20 @@ fn scope_model_ring(mesh: &mut Scene, center: Vec2, aspect: f32, progress: f32, 
     }
 }
 
+const SETTINGS_VISIBLE_ROWS: usize = 11;
+const SETTINGS_ROW_TOP: f32 = 0.49;
+const SETTINGS_ROW_GAP: f32 = 0.095;
+
+fn settings_visible_range(selected: usize, total: usize) -> std::ops::Range<usize> {
+    if total <= SETTINGS_VISIBLE_ROWS {
+        return 0..total;
+    }
+    let start = selected
+        .saturating_sub(SETTINGS_VISIBLE_ROWS / 2)
+        .min(total - SETTINGS_VISIBLE_ROWS);
+    start..start + SETTINGS_VISIBLE_ROWS
+}
+
 pub fn settings_overlay(
     mesh: &mut Scene,
     settings: &crate::persistence::GameSettings,
@@ -436,29 +460,17 @@ pub fn settings_overlay(
         aspect,
     );
 
-    // Selection rows map to Resume, gameplay settings, and Quit.
-    let rows = [
-        (0.43, 0.09),
-        (0.33, 0.09),
-        (0.23, 0.09),
-        (0.13, 0.09),
-        (0.03, 0.09),
-        (-0.07, 0.09),
-        (-0.17, 0.09),
-        (-0.27, 0.09),
-        (-0.37, 0.09),
-        (-0.47, 0.09),
-        (-0.57, 0.09),
-        (-0.67, 0.09),
-        (-0.77, 0.09),
-    ];
-    for (index, (bottom, height)) in rows.into_iter().enumerate() {
-        let selected_row = selected == index;
+    let visible = settings_visible_range(selected, 19);
+    for (row, setting_index) in visible.clone().enumerate() {
+        let center = SETTINGS_ROW_TOP - row as f32 * SETTINGS_ROW_GAP - 0.02;
+        let height = 0.070;
+        let bottom = center - height * 0.5;
+        let selected_row = selected == setting_index;
         rect_alpha(
             mesh,
-            -0.53 * aspect,
+            -0.57 * aspect,
             bottom,
-            1.06 * aspect,
+            1.14 * aspect,
             height,
             if selected_row {
                 [0.92, 0.48, 0.16, 0.22]
@@ -470,7 +482,7 @@ pub fn settings_overlay(
         if selected_row {
             rect(
                 mesh,
-                -0.53 * aspect,
+                -0.57 * aspect,
                 bottom,
                 0.008 * aspect,
                 height,
@@ -480,34 +492,38 @@ pub fn settings_overlay(
         }
     }
 
-    for (setting_index, y, value) in [
-        (1, 0.325, settings.mouse_sensitivity / 5.0),
-        (2, 0.22, settings.ads_sensitivity),
-        (6, -0.185, settings.volume),
+    for (setting_index, value) in [
+        (1, settings.mouse_sensitivity / 5.0),
+        (2, settings.ads_sensitivity),
+        (12, settings.volume),
     ] {
+        let Some(row) = visible.clone().position(|index| index == setting_index) else {
+            continue;
+        };
         let value = value.clamp(0.0, 1.0);
         let color = if selected == setting_index {
             [1.0, 0.65, 0.24]
         } else {
             [0.38, 0.61, 0.68]
         };
+        let y = SETTINGS_ROW_TOP - row as f32 * SETTINGS_ROW_GAP - 0.025;
         rect(
             mesh,
             0.0,
             y,
-            0.28 * aspect,
-            0.009,
+            0.22 * aspect,
+            0.006,
             [0.12, 0.17, 0.20],
             aspect,
         );
-        rect(mesh, 0.0, y, 0.28 * aspect * value, 0.009, color, aspect);
-        let knob_x = 0.28 * value;
+        rect(mesh, 0.0, y, 0.22 * aspect * value, 0.006, color, aspect);
+        let knob_x = 0.22 * value;
         rect(
             mesh,
             (knob_x - 0.006) * aspect,
-            y - 0.01,
+            y - 0.008,
             0.012 * aspect,
-            0.029,
+            0.022,
             [0.94, 0.95, 0.92],
             aspect,
         );
@@ -522,7 +538,7 @@ pub fn settings_text(
     settings_text_for_context(settings, selected, viewport, false)
 }
 
-pub fn settings_text_for_context(
+pub fn settings_text_for_context_legacy(
     settings: &crate::persistence::GameSettings,
     selected: usize,
     viewport: [u32; 2],
@@ -561,7 +577,7 @@ pub fn settings_text_for_context(
     let active = [1.0, 0.65, 0.24, 1.0];
     line(
         if from_title { "SETTINGS" } else { "PAUSED" },
-        0.0,
+        -0.10,
         0.78,
         0.07,
         [0.98, 0.72, 0.39, 1.0],
@@ -573,7 +589,7 @@ pub fn settings_text_for_context(
         } else {
             "TRAINING PAUSED"
         },
-        0.0,
+        -0.24,
         0.65,
         0.025,
         [0.59, 0.68, 0.71, 1.0],
@@ -796,6 +812,220 @@ pub fn settings_text_for_context(
     mesh
 }
 
+pub fn settings_text_for_context(
+    settings: &crate::persistence::GameSettings,
+    selected: usize,
+    viewport: [u32; 2],
+    from_title: bool,
+) -> TextMesh {
+    settings_text_with_bindings(settings, selected, viewport, from_title, 0, false)
+}
+
+pub fn settings_text_with_bindings(
+    settings: &crate::persistence::GameSettings,
+    selected: usize,
+    viewport: [u32; 2],
+    from_title: bool,
+    binding_selection: usize,
+    waiting_for_binding: bool,
+) -> TextMesh {
+    let mut mesh = TextMesh::default();
+    settings_text_with_bindings_into(
+        &mut mesh,
+        settings,
+        selected,
+        viewport,
+        from_title,
+        binding_selection,
+        waiting_for_binding,
+    );
+    mesh
+}
+
+pub fn settings_text_with_bindings_into(
+    mesh: &mut TextMesh,
+    settings: &crate::persistence::GameSettings,
+    selected: usize,
+    viewport: [u32; 2],
+    from_title: bool,
+    binding_selection: usize,
+    waiting_for_binding: bool,
+) {
+    use crate::persistence::BindingAction;
+
+    mesh.clear();
+    let [width, height] = viewport;
+    let font = FontAtlas::shared();
+    let mut line = |text: &str, x_ndc: f32, y_ndc: f32, size: f32, color: [f32; 4]| {
+        let font_px = height as f32 * size;
+        let measured = font.measure_width(text, font_px);
+        let x_px = (x_ndc + 1.0) * width as f32 * 0.5;
+        font.layout_into(
+            mesh,
+            text,
+            [x_px, (1.0 - y_ndc) * height as f32 * 0.5],
+            font_px,
+            viewport,
+            color,
+        );
+        measured
+    };
+    let normal = [0.82, 0.87, 0.89, 1.0];
+    let active = [1.0, 0.65, 0.24, 1.0];
+    let warning = [1.0, 0.49, 0.32, 1.0];
+    let _ = line(
+        if from_title { "SETTINGS" } else { "PAUSED" },
+        -0.08,
+        0.80,
+        0.060,
+        [0.98, 0.72, 0.39, 1.0],
+    );
+    let _ = line(
+        if from_title {
+            "GAMEPLAY OPTIONS"
+        } else {
+            "TRAINING PAUSED"
+        },
+        -0.23,
+        0.69,
+        0.021,
+        [0.59, 0.68, 0.71, 1.0],
+    );
+
+    let binding_action = BindingAction::ALL[binding_selection % BindingAction::ALL.len()];
+    let (resolution_width, resolution_height) = settings.resolution_size();
+    let fps_label = settings
+        .fps_limit()
+        .map_or_else(|| "OFF".to_owned(), |fps| format!("{fps} FPS"));
+    let behavior = match settings.bot_behavior {
+        0 => "STATIC",
+        1 => "STRAFE",
+        2 => "CHASE",
+        _ => "MIXED",
+    };
+    let mut rows = vec![
+        (
+            if from_title {
+                "BACK TO MENU".to_owned()
+            } else {
+                "RESUME".to_owned()
+            },
+            String::new(),
+        ),
+        (
+            "MOUSE SENSITIVITY".to_owned(),
+            format!("{:.2}", settings.mouse_sensitivity),
+        ),
+        (
+            "ADS SENSITIVITY".to_owned(),
+            format!("{:.2}", settings.ads_sensitivity),
+        ),
+        (
+            "FIELD OF VIEW".to_owned(),
+            format!("{:.0} DEG", settings.fov),
+        ),
+        (
+            "INVERT Y AXIS".to_owned(),
+            if settings.invert_y { "ON" } else { "OFF" }.to_owned(),
+        ),
+        (
+            "KEY BINDING".to_owned(),
+            format!(
+                "{}  {}",
+                binding_action.label(),
+                settings.key_bindings.get(binding_action).label()
+            ),
+        ),
+        (
+            "DISPLAY RESOLUTION".to_owned(),
+            format!("{resolution_width} X {resolution_height}"),
+        ),
+        (
+            "INTERNAL RESOLUTION".to_owned(),
+            format!("{}%", (settings.render_scale() * 100.0).round()),
+        ),
+        (
+            "FULLSCREEN".to_owned(),
+            if settings.fullscreen { "ON" } else { "OFF" }.to_owned(),
+        ),
+        (
+            "VSYNC".to_owned(),
+            if settings.vsync { "ON" } else { "OFF" }.to_owned(),
+        ),
+        ("FPS LIMIT".to_owned(), fps_label),
+        (
+            "INFINITE AMMO".to_owned(),
+            if settings.infinite_ammo { "ON" } else { "OFF" }.to_owned(),
+        ),
+        (
+            "SOUND VOLUME".to_owned(),
+            format!("{:.0}%", settings.volume * 100.0),
+        ),
+        ("BOT COUNT".to_owned(), settings.bot_count.to_string()),
+        ("BOT BEHAVIOR".to_owned(), behavior.to_owned()),
+        ("BOT HP".to_owned(), settings.bot_hp.to_string()),
+        (
+            "BOT SPEED".to_owned(),
+            format!("{:.1}X", settings.bot_speed),
+        ),
+        (
+            "BOT RESPAWN".to_owned(),
+            format!("{:.2}S", settings.bot_respawn_seconds),
+        ),
+        ("QUIT GAME".to_owned(), String::new()),
+    ];
+    if waiting_for_binding {
+        rows[5].1 = "PRESS A KEY  (ESC CANCEL)".to_owned();
+    }
+    let visible = settings_visible_range(selected, rows.len());
+    for (row, index) in visible.clone().enumerate() {
+        let (label, value) = &rows[index];
+        let y = SETTINGS_ROW_TOP - row as f32 * SETTINGS_ROW_GAP;
+        let color = if selected == index {
+            if index == 18 {
+                [1.0, 0.48, 0.38, 1.0]
+            } else {
+                active
+            }
+        } else {
+            normal
+        };
+        let _ = line(label, -0.55, y, 0.019, color);
+        if !value.is_empty() {
+            let _ = line(
+                value,
+                0.30,
+                y,
+                0.019,
+                if waiting_for_binding && index == 5 {
+                    warning
+                } else {
+                    color
+                },
+            );
+        }
+    }
+    let _ = line(
+        "UP/DOWN SELECT   LEFT/RIGHT ADJUST   ENTER REBIND   HOME DEFAULTS",
+        -0.55,
+        -0.86,
+        0.014,
+        normal,
+    );
+    let _ = line(
+        &format!(
+            "OPTIONS {}-{} / {}",
+            visible.start + 1,
+            visible.end,
+            rows.len()
+        ),
+        0.37,
+        0.69,
+        0.016,
+        normal,
+    );
+}
+
 pub fn title_overlay(mesh: &mut Scene, selected: usize, aspect: f32) {
     modal_backdrop(mesh, aspect);
     rect_alpha(
@@ -848,25 +1078,39 @@ pub fn title_overlay(mesh: &mut Scene, selected: usize, aspect: f32) {
     }
 }
 
+fn append_centered_text_line(
+    mesh: &mut TextMesh,
+    font: &FontAtlas,
+    text: &str,
+    y_ndc: f32,
+    size: f32,
+    viewport: [u32; 2],
+    color: [f32; 4],
+) {
+    let font_px = viewport[1] as f32 * size;
+    let width = font.measure_width(text, font_px);
+    let x = (viewport[0] as f32 - width) * 0.5;
+    font.layout_into(
+        mesh,
+        text,
+        [x, (1.0 - y_ndc) * viewport[1] as f32 * 0.5],
+        font_px,
+        viewport,
+        color,
+    );
+}
+
 pub fn title_text(selected: usize, viewport: [u32; 2]) -> TextMesh {
-    let [width, height] = viewport;
-    let font = FontAtlas::shared();
     let mut mesh = TextMesh::default();
+    title_text_into(&mut mesh, selected, viewport);
+    mesh
+}
+
+pub fn title_text_into(mesh: &mut TextMesh, selected: usize, viewport: [u32; 2]) {
+    mesh.clear();
+    let font = FontAtlas::shared();
     let mut line = |text: &str, y_ndc: f32, size: f32, color: [f32; 4]| {
-        let font_px = height as f32 * size;
-        let measured = font.layout(text, [0.0, 0.0], font_px, viewport, color);
-        let x = (width as f32 - measured.width_px) * 0.5;
-        let layout = font.layout(
-            text,
-            [x, (1.0 - y_ndc) * height as f32 * 0.5],
-            font_px,
-            viewport,
-            color,
-        );
-        let base = mesh.vertices.len() as u16;
-        mesh.vertices.extend(layout.mesh.vertices);
-        mesh.indices
-            .extend(layout.mesh.indices.into_iter().map(|index| base + index));
+        append_centered_text_line(mesh, font, text, y_ndc, size, viewport, color);
     };
     line("LITEWEIGHT FPS", 0.62, 0.075, [0.98, 0.72, 0.39, 1.0]);
     line(
@@ -897,7 +1141,6 @@ pub fn title_text(selected: usize, viewport: [u32; 2]) -> TextMesh {
         0.027,
         [0.67, 0.75, 0.77, 1.0],
     );
-    mesh
 }
 
 pub fn results_overlay(mesh: &mut Scene, aspect: f32) {
@@ -938,24 +1181,20 @@ pub fn results_text(
     stats: crate::simulation::game_mode::MatchStats,
     viewport: [u32; 2],
 ) -> TextMesh {
-    let [width, height] = viewport;
-    let font = FontAtlas::shared();
     let mut mesh = TextMesh::default();
+    results_text_into(&mut mesh, stats, viewport);
+    mesh
+}
+
+pub fn results_text_into(
+    mesh: &mut TextMesh,
+    stats: crate::simulation::game_mode::MatchStats,
+    viewport: [u32; 2],
+) {
+    mesh.clear();
+    let font = FontAtlas::shared();
     let mut line = |text: &str, y_ndc: f32, size: f32, color: [f32; 4]| {
-        let font_px = height as f32 * size;
-        let measured = font.layout(text, [0.0, 0.0], font_px, viewport, color);
-        let x = (width as f32 - measured.width_px) * 0.5;
-        let layout = font.layout(
-            text,
-            [x, (1.0 - y_ndc) * height as f32 * 0.5],
-            font_px,
-            viewport,
-            color,
-        );
-        let base = mesh.vertices.len() as u16;
-        mesh.vertices.extend(layout.mesh.vertices);
-        mesh.indices
-            .extend(layout.mesh.indices.into_iter().map(|index| base + index));
+        append_centered_text_line(mesh, font, text, y_ndc, size, viewport, color);
     };
     let bright = [0.90, 0.93, 0.93, 1.0];
     let muted = [0.62, 0.71, 0.74, 1.0];
@@ -1001,7 +1240,6 @@ pub fn results_text(
         );
     }
     line("ENTER RETRY      ESC MAIN MENU", -0.65, 0.027, muted);
-    mesh
 }
 
 pub struct GameHudInfo {
@@ -1012,27 +1250,20 @@ pub struct GameHudInfo {
     pub magazine: u32,
     pub kills: u32,
     pub infinite_ammo: bool,
+    pub key_bindings: crate::persistence::KeyBindings,
 }
 
 pub fn game_hud_text(info: GameHudInfo, viewport: [u32; 2]) -> TextMesh {
-    let [width, height] = viewport;
-    let font = FontAtlas::shared();
     let mut mesh = TextMesh::default();
+    game_hud_text_into(&mut mesh, info, viewport);
+    mesh
+}
+
+pub fn game_hud_text_into(mesh: &mut TextMesh, info: GameHudInfo, viewport: [u32; 2]) {
+    mesh.clear();
+    let font = FontAtlas::shared();
     let mut line = |text: &str, y_ndc: f32, size: f32, color: [f32; 4]| {
-        let font_px = height as f32 * size;
-        let measured = font.layout(text, [0.0, 0.0], font_px, viewport, color);
-        let x = (width as f32 - measured.width_px) * 0.5;
-        let layout = font.layout(
-            text,
-            [x, (1.0 - y_ndc) * height as f32 * 0.5],
-            font_px,
-            viewport,
-            color,
-        );
-        let base = mesh.vertices.len() as u16;
-        mesh.vertices.extend(layout.mesh.vertices);
-        mesh.indices
-            .extend(layout.mesh.indices.into_iter().map(|index| base + index));
+        append_centered_text_line(mesh, font, text, y_ndc, size, viewport, color);
     };
     let muted = [0.79, 0.84, 0.84, 1.0];
     let status = match info.mode {
@@ -1043,7 +1274,7 @@ pub fn game_hud_text(info: GameHudInfo, viewport: [u32; 2]) -> TextMesh {
         }
     };
     let ammo_text = if info.infinite_ammo {
-        "INF".to_owned()
+        "∞".to_owned()
     } else {
         format!("{}/{}", info.ammo, info.magazine)
     };
@@ -1059,14 +1290,34 @@ pub fn game_hud_text(info: GameHudInfo, viewport: [u32; 2]) -> TextMesh {
         0.026,
         muted,
     );
-    line("WASD MOVE   SHIFT SPRINT   SPACE JUMP", -0.82, 0.023, muted);
+    let bindings = info.key_bindings;
     line(
-        "LMB FIRE   RMB ADS   R RELOAD   1/2/3 WEAPON   ESC PAUSE",
+        &format!(
+            "{}{}{}{} MOVE   {} DASH   {} JUMP",
+            bindings.forward.label(),
+            bindings.left.label(),
+            bindings.backward.label(),
+            bindings.right.label(),
+            bindings.dash.label(),
+            bindings.jump.label(),
+        ),
+        -0.82,
+        0.023,
+        muted,
+    );
+    line(
+        &format!(
+            "LMB FIRE   RMB ADS   {} RELOAD   {}/{}/{} WEAPON   {} PAUSE",
+            bindings.reload.label(),
+            bindings.pistol.label(),
+            bindings.assault_rifle.label(),
+            bindings.sniper.label(),
+            bindings.pause.label(),
+        ),
         -0.90,
         0.023,
         muted,
     );
-    mesh
 }
 
 pub fn append_notice_text(mesh: &mut TextMesh, message: &str, viewport: [u32; 2], y_ndc: f32) {
@@ -1075,21 +1326,18 @@ pub fn append_notice_text(mesh: &mut TextMesh, message: &str, viewport: [u32; 2]
     }
     let font = FontAtlas::shared();
     let font_px = viewport[1] as f32 * 0.032;
-    let measured = font.layout(message, [0.0, 0.0], font_px, viewport, [1.0; 4]);
-    let layout = font.layout(
+    let measured = font.measure_width(message, font_px);
+    font.layout_into(
+        mesh,
         message,
         [
-            ((viewport[0] as f32 - measured.width_px) * 0.5).max(8.0),
+            ((viewport[0] as f32 - measured) * 0.5).max(8.0),
             (1.0 - y_ndc) * viewport[1] as f32 * 0.5,
         ],
         font_px,
         viewport,
         [1.0, 0.46, 0.26, 1.0],
     );
-    let base = mesh.vertices.len() as u16;
-    mesh.vertices.extend(layout.mesh.vertices);
-    mesh.indices
-        .extend(layout.mesh.indices.into_iter().map(|index| base + index));
 }
 
 fn digit(mesh: &mut Scene, n: u32, x: f32, y: f32, aspect: f32) {
@@ -1505,10 +1753,46 @@ pub fn hud_mesh_with_menu(
     weapon_y_offset: f32,
     menu: Option<(&crate::persistence::GameSettings, usize)>,
 ) -> Scene {
+    hud_mesh_with_menu_and_ammo(weapon, combat, aspect, weapon_y_offset, menu, false)
+}
+
+pub fn hud_mesh_with_menu_and_ammo(
+    weapon: &Weapon,
+    combat: &Combat,
+    aspect: f32,
+    weapon_y_offset: f32,
+    menu: Option<(&crate::persistence::GameSettings, usize)>,
+    infinite_ammo: bool,
+) -> Scene {
     let mut m = Scene {
-        vertices: Vec::with_capacity(400),
-        indices: Vec::with_capacity(600),
+        vertices: Vec::new(),
+        indices: Vec::new(),
     };
+    hud_mesh_with_menu_and_ammo_into(
+        &mut m,
+        weapon,
+        combat,
+        aspect,
+        weapon_y_offset,
+        menu,
+        infinite_ammo,
+    );
+    m
+}
+
+pub fn hud_mesh_with_menu_and_ammo_into(
+    m: &mut Scene,
+    weapon: &Weapon,
+    combat: &Combat,
+    aspect: f32,
+    weapon_y_offset: f32,
+    menu: Option<(&crate::persistence::GameSettings, usize)>,
+    infinite_ammo: bool,
+) {
+    m.vertices.clear();
+    m.indices.clear();
+    m.vertices.reserve(400);
+    m.indices.reserve(600);
     // 武器はADS中も表示し続け、サイトピクチャーを別の軽量2Dメッシュで重ねる。
     {
         let layout = weapon.view_model_layout(weapon_y_offset);
@@ -1524,13 +1808,13 @@ pub fn hud_mesh_with_menu(
         match weapon.kind {
             WeaponKind::Pistol => {
                 slanted_rect(
-                    &mut m,
+                    m,
                     [x + 0.01, y + body_h * 0.05, 0.07, 0.055, 0.16, -0.025],
                     dark,
                     aspect,
                 );
                 rect(
-                    &mut m,
+                    m,
                     x - body_w * 0.40,
                     y + body_h * 0.48,
                     body_w * 0.80,
@@ -1538,19 +1822,11 @@ pub fn hud_mesh_with_menu(
                     color,
                     aspect,
                 );
-                rect(
-                    &mut m,
-                    x - 0.016,
-                    y + body_h * 0.90,
-                    0.032,
-                    0.13,
-                    dark,
-                    aspect,
-                );
+                rect(m, x - 0.016, y + body_h * 0.90, 0.032, 0.13, dark, aspect);
             }
             WeaponKind::AssaultRifle => {
                 slanted_rect(
-                    &mut m,
+                    m,
                     [
                         x - body_w * 0.42,
                         y + body_h * 0.30,
@@ -1562,17 +1838,9 @@ pub fn hud_mesh_with_menu(
                     dark,
                     aspect,
                 );
+                rect(m, x - 0.02, y + body_h * 0.92, 0.04, 0.22, dark, aspect);
                 rect(
-                    &mut m,
-                    x - 0.02,
-                    y + body_h * 0.92,
-                    0.04,
-                    0.22,
-                    dark,
-                    aspect,
-                );
-                rect(
-                    &mut m,
+                    m,
                     x - body_w * 0.34,
                     y + body_h * 0.45,
                     body_w * 0.68,
@@ -1581,7 +1849,7 @@ pub fn hud_mesh_with_menu(
                     aspect,
                 );
                 slanted_rect(
-                    &mut m,
+                    m,
                     [
                         x - 0.01,
                         y + body_h * 0.05,
@@ -1593,19 +1861,11 @@ pub fn hud_mesh_with_menu(
                     dark,
                     aspect,
                 );
-                rect(
-                    &mut m,
-                    x - 0.045,
-                    y + body_h * 0.89,
-                    0.09,
-                    0.045,
-                    dark,
-                    aspect,
-                );
+                rect(m, x - 0.045, y + body_h * 0.89, 0.09, 0.045, dark, aspect);
             }
             WeaponKind::Sniper => {
                 slanted_rect(
-                    &mut m,
+                    m,
                     [
                         x,
                         y + body_h * 0.20,
@@ -1618,7 +1878,7 @@ pub fn hud_mesh_with_menu(
                     aspect,
                 );
                 rect(
-                    &mut m,
+                    m,
                     x - 0.016,
                     y + body_h * 0.52,
                     0.032,
@@ -1627,7 +1887,7 @@ pub fn hud_mesh_with_menu(
                     aspect,
                 );
                 rect(
-                    &mut m,
+                    m,
                     x - body_w * 0.34,
                     y + body_h * 0.44,
                     body_w * 0.68,
@@ -1639,19 +1899,13 @@ pub fn hud_mesh_with_menu(
                 let eased = progress * progress * (3.0 - 2.0 * progress);
                 let scope_rim_opacity = 1.0 - eased;
                 if scope_rim_opacity > f32::EPSILON {
-                    scope_model_ring(
-                        &mut m,
-                        layout.sight_screen,
-                        aspect,
-                        progress,
-                        scope_rim_opacity,
-                    );
+                    scope_model_ring(m, layout.sight_screen, aspect, progress, scope_rim_opacity);
                 }
             }
         }
         // The highlighted barrel aperture marks the same point used as the ray origin.
         triangle(
-            &mut m,
+            m,
             layout.muzzle_screen.to_array(),
             [
                 layout.muzzle_screen.x - 0.014,
@@ -1666,7 +1920,7 @@ pub fn hud_mesh_with_menu(
         );
         if combat.feedback > 0.075 {
             rect(
-                &mut m,
+                m,
                 layout.muzzle_screen.x - 0.025,
                 layout.muzzle_screen.y + 0.01,
                 0.05,
@@ -1686,7 +1940,7 @@ pub fn hud_mesh_with_menu(
     }
     if weapon.kind == WeaponKind::Sniper {
         scope_picture(
-            &mut m,
+            m,
             aspect,
             weapon.ads_progress,
             weapon.view_model_layout(weapon_y_offset).sight_screen,
@@ -1701,7 +1955,7 @@ pub fn hud_mesh_with_menu(
         let gap = 0.008 + reticle_spread * 1.4;
         for sign in [-1., 1.] {
             rect(
-                &mut m,
+                m,
                 sign * gap - 0.006,
                 -0.0015,
                 0.012,
@@ -1710,7 +1964,7 @@ pub fn hud_mesh_with_menu(
                 aspect,
             );
             rect(
-                &mut m,
+                m,
                 -0.0015,
                 sign * gap - 0.006,
                 0.003,
@@ -1719,7 +1973,7 @@ pub fn hud_mesh_with_menu(
                 aspect,
             );
         }
-        rect(&mut m, -0.002, -0.002, 0.004, 0.004, [1.; 3], aspect);
+        rect(m, -0.002, -0.002, 0.004, 0.004, [1.; 3], aspect);
     }
     if combat.feedback > 0.0 && combat.last_shot.hit {
         let color = if combat.last_shot.killed {
@@ -1736,7 +1990,7 @@ pub fn hud_mesh_with_menu(
         };
         for (x, y) in [(-1.0, -1.0), (-1.0, 1.0), (1.0, -1.0), (1.0, 1.0)] {
             stroke_segment(
-                &mut m,
+                m,
                 [x * inner, y * inner],
                 [x * outer, y * outer],
                 thickness,
@@ -1747,7 +2001,7 @@ pub fn hud_mesh_with_menu(
     }
     if weapon.bolt_remaining > 0.0 {
         rect(
-            &mut m,
+            m,
             -0.15,
             -0.82,
             0.3 * (1. - weapon.bolt_remaining / weapon.data.bolt_seconds),
@@ -1756,11 +2010,13 @@ pub fn hud_mesh_with_menu(
             aspect,
         );
     }
-    digit(&mut m, weapon.ammo / 10, aspect - 0.19, -0.87, aspect);
-    digit(&mut m, weapon.ammo % 10, aspect - 0.13, -0.87, aspect);
+    if !infinite_ammo {
+        digit(m, weapon.ammo / 10, aspect - 0.19, -0.87, aspect);
+        digit(m, weapon.ammo % 10, aspect - 0.13, -0.87, aspect);
+    }
     if weapon.reload_remaining > 0.0 {
         rect(
-            &mut m,
+            m,
             -0.15,
             -0.82,
             0.3 * (1. - weapon.reload_remaining / weapon.data.reload_seconds),
@@ -1770,18 +2026,116 @@ pub fn hud_mesh_with_menu(
         );
     }
     if let Some((settings, selected)) = menu {
-        settings_overlay(&mut m, settings, selected, aspect);
+        settings_overlay(m, settings, selected, aspect);
     }
-    m
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
-        append_notice_text, scope_shadow, settings_overlay, ScopeVisualState, SCOPE_MAX_RADIUS,
+        append_notice_text, scope_shadow, settings_overlay, settings_text_with_bindings,
+        settings_visible_range, ScopeVisualState, SCOPE_MAX_RADIUS, SETTINGS_VISIBLE_ROWS,
     };
     use crate::engine::text::TextMesh;
     use crate::simulation::weapon::{Weapon, WeaponKind, SNIPER};
+
+    #[test]
+    fn settings_scroll_window_keeps_selection_visible_at_each_end() {
+        assert_eq!(SETTINGS_VISIBLE_ROWS, 11);
+        assert_eq!(settings_visible_range(0, 19), 0..11);
+        assert_eq!(settings_visible_range(9, 19), 4..15);
+        assert_eq!(settings_visible_range(18, 19), 8..19);
+    }
+
+    #[test]
+    fn selected_background_covers_the_rendered_text_with_balanced_padding() {
+        let settings = crate::persistence::GameSettings::default();
+        let text = settings_text_with_bindings(&settings, 1, [1280, 720], false, 0, false);
+        let selected_text = text
+            .vertices
+            .iter()
+            .filter(|vertex| vertex.color == [1.0, 0.65, 0.24, 1.0])
+            .collect::<Vec<_>>();
+        let glyph_min_y = selected_text
+            .iter()
+            .map(|vertex| vertex.position[1])
+            .fold(f32::INFINITY, f32::min);
+        let glyph_max_y = selected_text
+            .iter()
+            .map(|vertex| vertex.position[1])
+            .fold(f32::NEG_INFINITY, f32::max);
+        let glyph_min_x = selected_text
+            .iter()
+            .map(|vertex| vertex.position[0])
+            .fold(f32::INFINITY, f32::min);
+        let glyph_max_x = selected_text
+            .iter()
+            .map(|vertex| vertex.position[0])
+            .fold(f32::NEG_INFINITY, f32::max);
+
+        let mut background = crate::Scene {
+            vertices: Vec::new(),
+            indices: Vec::new(),
+        };
+        settings_overlay(&mut background, &settings, 1, 16.0 / 9.0);
+        let highlight = background
+            .vertices
+            .iter()
+            .filter(|vertex| vertex.color == [0.92, 0.48, 0.16, 0.22])
+            .collect::<Vec<_>>();
+        let background_min_y = highlight
+            .iter()
+            .map(|vertex| vertex.position[1])
+            .fold(f32::INFINITY, f32::min);
+        let background_max_y = highlight
+            .iter()
+            .map(|vertex| vertex.position[1])
+            .fold(f32::NEG_INFINITY, f32::max);
+        let aspect = 16.0 / 9.0;
+        let background_min_x = highlight
+            .iter()
+            .map(|vertex| vertex.position[0] * aspect)
+            .fold(f32::INFINITY, f32::min);
+        let background_max_x = highlight
+            .iter()
+            .map(|vertex| vertex.position[0] * aspect)
+            .fold(f32::NEG_INFINITY, f32::max);
+
+        assert!(background_min_y < glyph_min_y - 0.005);
+        assert!(background_max_y > glyph_max_y + 0.005);
+        assert!(background_min_x < glyph_min_x - 0.005);
+        assert!(background_max_x > glyph_max_x + 0.005);
+        let top_padding = background_max_y - glyph_max_y;
+        let bottom_padding = glyph_min_y - background_min_y;
+        assert!((top_padding - bottom_padding).abs() < 0.02);
+    }
+
+    #[test]
+    fn sensitivity_slider_stays_clear_of_its_value_text() {
+        let settings = crate::persistence::GameSettings::default();
+        let aspect = 16.0 / 9.0;
+        let text = settings_text_with_bindings(&settings, 1, [1280, 720], false, 0, false);
+        let value_start_x = text
+            .vertices
+            .iter()
+            .filter(|vertex| vertex.color == [1.0, 0.65, 0.24, 1.0] && vertex.position[0] > 0.0)
+            .map(|vertex| vertex.position[0])
+            .fold(f32::INFINITY, f32::min);
+
+        let mut background = crate::Scene {
+            vertices: Vec::new(),
+            indices: Vec::new(),
+        };
+        settings_overlay(&mut background, &settings, 1, aspect);
+        let slider_end_x = background
+            .vertices
+            .iter()
+            .filter(|vertex| vertex.color == [1.0, 0.65, 0.24, 1.0])
+            .map(|vertex| vertex.position[0] * aspect)
+            .fold(f32::NEG_INFINITY, f32::max);
+
+        assert!(slider_end_x < value_start_x - 0.02);
+    }
 
     #[test]
     fn storage_notice_adds_readable_text_to_the_hud_mesh() {
@@ -2016,18 +2370,18 @@ mod tests {
             .map(|vertex| vertex.position[1])
             .fold(f32::NEG_INFINITY, f32::max);
         assert!(
-            min_y < 0.34,
+            min_y < 0.365,
             "selected row must extend below slider: {min_y}"
         );
         assert!(
-            max_y > 0.395,
+            max_y > 0.405,
             "selected row must extend above label: {max_y}"
         );
     }
 
     #[test]
     fn resume_and_quit_highlights_cover_the_full_text_height() {
-        for (selected, expected_min_y, expected_max_y) in [(0, 0.46, 0.50), (12, -0.76, -0.68)] {
+        for (selected, expected_min_y, expected_max_y) in [(0, 0.44, 0.50), (18, -0.51, -0.45)] {
             let mut mesh = crate::Scene {
                 vertices: Vec::new(),
                 indices: Vec::new(),

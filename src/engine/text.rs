@@ -10,6 +10,8 @@ const CELL_WIDTH: usize = 64;
 const CELL_HEIGHT: usize = 64;
 const FIRST_CHAR: u8 = 32;
 const LAST_CHAR: u8 = 126;
+const EXTRA_CHARS: [char; 1] = ['∞'];
+const GLYPH_COUNT: usize = (LAST_CHAR - FIRST_CHAR + 1) as usize + EXTRA_CHARS.len();
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Pod, Zeroable)]
@@ -23,6 +25,14 @@ pub struct TextVertex {
 pub struct TextMesh {
     pub vertices: Vec<TextVertex>,
     pub indices: Vec<u16>,
+}
+
+impl TextMesh {
+    /// Clear generated geometry while retaining vector capacity for the next frame.
+    pub fn clear(&mut self) {
+        self.vertices.clear();
+        self.indices.clear();
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -39,10 +49,10 @@ struct Glyph {
     advance: f32,
 }
 
-/// Embedded Cantarell atlas and proportional metrics for printable Basic Latin.
+/// Embedded Cantarell atlas and proportional metrics for Basic Latin plus the infinity glyph.
 pub struct FontAtlas {
     pixels: Vec<u8>,
-    glyphs: [Glyph; (LAST_CHAR - FIRST_CHAR + 1) as usize],
+    glyphs: [Glyph; GLYPH_COUNT],
     ascent: f32,
 }
 
@@ -58,15 +68,18 @@ impl FontAtlas {
         let width = COLUMNS * CELL_WIDTH;
         let height = ROWS * CELL_HEIGHT;
         let mut pixels = vec![0_u8; width * height];
-        let mut glyphs = [Glyph::default(); (LAST_CHAR - FIRST_CHAR + 1) as usize];
+        let mut glyphs = [Glyph::default(); GLYPH_COUNT];
 
-        for code in FIRST_CHAR..=LAST_CHAR {
-            let index = usize::from(code - FIRST_CHAR);
+        for (index, character) in (FIRST_CHAR..=LAST_CHAR)
+            .map(char::from)
+            .chain(EXTRA_CHARS)
+            .enumerate()
+        {
             let column = index % COLUMNS;
             let row = index / COLUMNS;
             let cell_x = (column * CELL_WIDTH) as f32;
             let cell_y = (row * CELL_HEIGHT) as f32;
-            let mut glyph = scaled.scaled_glyph(char::from(code));
+            let mut glyph = scaled.scaled_glyph(character);
             glyph.position = point(cell_x + 4.0, cell_y + scaled.ascent());
             let mut metrics = Glyph {
                 advance: scaled.h_advance(glyph.id),
@@ -125,20 +138,47 @@ impl FontAtlas {
         viewport: [u32; 2],
         color: [f32; 4],
     ) -> TextLayout {
+        let mut mesh = TextMesh::default();
+        let width_px = self.layout_into(&mut mesh, text, origin_px, font_px, viewport, color);
+        TextLayout { mesh, width_px }
+    }
+
+    pub fn measure_width(&self, text: &str, font_px: f32) -> f32 {
+        if !font_px.is_finite() || font_px <= 0.0 {
+            return 0.0;
+        }
+        let scale = font_px / FONT_SIZE;
+        let mut width = 0.0_f32;
+        let mut max_width = 0.0_f32;
+        for character in text.chars() {
+            if character == '\n' {
+                max_width = max_width.max(width);
+                width = 0.0;
+                continue;
+            }
+            let index = glyph_index(character).unwrap_or(usize::from(b'?' - FIRST_CHAR));
+            width += self.glyphs[index].advance * scale;
+        }
+        max_width.max(width)
+    }
+
+    /// Append indexed glyph geometry without allocating a temporary mesh.
+    pub fn layout_into(
+        &self,
+        mesh: &mut TextMesh,
+        text: &str,
+        origin_px: [f32; 2],
+        font_px: f32,
+        viewport: [u32; 2],
+        color: [f32; 4],
+    ) -> f32 {
         let [width, height] = viewport;
         if width == 0 || height == 0 || !font_px.is_finite() || font_px <= 0.0 {
-            return TextLayout {
-                mesh: TextMesh::default(),
-                width_px: 0.0,
-            };
+            return 0.0;
         }
         let scale = font_px / FONT_SIZE;
         let mut cursor_x = origin_px[0];
         let mut baseline_y = origin_px[1] + self.ascent * scale;
-        let mut mesh = TextMesh {
-            vertices: Vec::with_capacity(text.chars().count() * 4),
-            indices: Vec::with_capacity(text.chars().count() * 6),
-        };
         let mut max_width = 0.0_f32;
 
         for character in text.chars() {
@@ -148,12 +188,7 @@ impl FontAtlas {
                 baseline_y += font_px * 1.25;
                 continue;
             }
-            let code = u32::from(character);
-            let index = if (u32::from(FIRST_CHAR)..=u32::from(LAST_CHAR)).contains(&code) {
-                code as usize - usize::from(FIRST_CHAR)
-            } else {
-                usize::from(b'?' - FIRST_CHAR)
-            };
+            let index = glyph_index(character).unwrap_or(usize::from(b'?' - FIRST_CHAR));
             let glyph = self.glyphs[index];
             if glyph.size[0] > 0.0 && glyph.size[1] > 0.0 {
                 let left_px = cursor_x + glyph.offset[0] * scale;
@@ -184,10 +219,19 @@ impl FontAtlas {
             cursor_x += glyph.advance * scale;
         }
         max_width = max_width.max(cursor_x - origin_px[0]);
-        TextLayout {
-            mesh,
-            width_px: max_width,
-        }
+        max_width
+    }
+}
+
+fn glyph_index(character: char) -> Option<usize> {
+    let code = u32::from(character);
+    if (u32::from(FIRST_CHAR)..=u32::from(LAST_CHAR)).contains(&code) {
+        Some(code as usize - usize::from(FIRST_CHAR))
+    } else {
+        EXTRA_CHARS
+            .iter()
+            .position(|extra| *extra == character)
+            .map(|index| usize::from(LAST_CHAR - FIRST_CHAR + 1) + index)
     }
 }
 
@@ -205,5 +249,31 @@ mod tests {
         assert!(i.width_px < w.width_px);
         assert_eq!(i.mesh.vertices.len(), 4);
         assert_eq!(i.mesh.indices.len(), 6);
+
+        let infinity = font.layout("∞", [0.0, 0.0], 32.0, [1280, 720], [1.0; 4]);
+        assert_eq!(infinity.mesh.vertices.len(), 4);
+        assert!(infinity.width_px > 0.0);
+    }
+
+    #[test]
+    fn text_layout_into_reuses_capacity_and_matches_owned_layout() {
+        let font = FontAtlas::embedded();
+        let text = "REUSABLE TEXT MESH";
+        let viewport = [1280, 720];
+        let color = [0.8, 0.9, 1.0, 1.0];
+        let expected = font.layout(text, [20.0, 30.0], 18.0, viewport, color);
+        let mut mesh = super::TextMesh::default();
+        let width = font.layout_into(&mut mesh, text, [20.0, 30.0], 18.0, viewport, color);
+        assert_eq!(width, expected.width_px);
+        assert_eq!(mesh.vertices.len(), expected.mesh.vertices.len());
+        assert_eq!(mesh.indices, expected.mesh.indices);
+
+        let vertex_capacity = mesh.vertices.capacity();
+        let index_capacity = mesh.indices.capacity();
+        mesh.clear();
+        font.layout_into(&mut mesh, text, [20.0, 30.0], 18.0, viewport, color);
+        assert_eq!(mesh.vertices.capacity(), vertex_capacity);
+        assert_eq!(mesh.indices.capacity(), index_capacity);
+        assert_eq!(font.measure_width(text, 18.0), expected.width_px);
     }
 }

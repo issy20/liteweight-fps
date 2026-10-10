@@ -9,7 +9,224 @@ use std::{
 use crate::simulation::game_mode::MatchStats;
 
 pub const MAX_SAVED_RESULTS: usize = 50;
+const DISPLAY_RESOLUTIONS: [(u32, u32); 4] = [(960, 540), (1280, 720), (1600, 900), (1920, 1080)];
+const RENDER_SCALES: [f32; 4] = [0.5, 0.67, 0.75, 1.0];
+const FPS_LIMITS: [u16; 7] = [30, 60, 90, 120, 144, 240, 0];
 static TEMP_FILE_SEQUENCE: AtomicU64 = AtomicU64::new(0);
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BindingKey {
+    A,
+    B,
+    C,
+    D,
+    E,
+    F,
+    G,
+    H,
+    I,
+    J,
+    K,
+    L,
+    M,
+    N,
+    O,
+    P,
+    Q,
+    R,
+    S,
+    T,
+    U,
+    V,
+    W,
+    X,
+    Y,
+    Z,
+    Space,
+    LeftShift,
+    RightShift,
+    Escape,
+    Digit1,
+    Digit2,
+    Digit3,
+}
+
+impl BindingKey {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Space => "SPACE",
+            Self::LeftShift => "L-SHIFT",
+            Self::RightShift => "R-SHIFT",
+            Self::Escape => "ESC",
+            Self::Digit1 => "1",
+            Self::Digit2 => "2",
+            Self::Digit3 => "3",
+            key => match key {
+                Self::A => "A",
+                Self::B => "B",
+                Self::C => "C",
+                Self::D => "D",
+                Self::E => "E",
+                Self::F => "F",
+                Self::G => "G",
+                Self::H => "H",
+                Self::I => "I",
+                Self::J => "J",
+                Self::K => "K",
+                Self::L => "L",
+                Self::M => "M",
+                Self::N => "N",
+                Self::O => "O",
+                Self::P => "P",
+                Self::Q => "Q",
+                Self::R => "R",
+                Self::S => "S",
+                Self::T => "T",
+                Self::U => "U",
+                Self::V => "V",
+                Self::W => "W",
+                Self::X => "X",
+                Self::Y => "Y",
+                Self::Z => "Z",
+                _ => unreachable!(),
+            },
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BindingAction {
+    Forward,
+    Backward,
+    Left,
+    Right,
+    Dash,
+    Jump,
+    Reload,
+    Pistol,
+    AssaultRifle,
+    Sniper,
+    Pause,
+}
+
+impl BindingAction {
+    pub const ALL: [Self; 11] = [
+        Self::Forward,
+        Self::Backward,
+        Self::Left,
+        Self::Right,
+        Self::Dash,
+        Self::Jump,
+        Self::Reload,
+        Self::Pistol,
+        Self::AssaultRifle,
+        Self::Sniper,
+        Self::Pause,
+    ];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Forward => "MOVE FORWARD",
+            Self::Backward => "MOVE BACK",
+            Self::Left => "MOVE LEFT",
+            Self::Right => "MOVE RIGHT",
+            Self::Dash => "DASH",
+            Self::Jump => "JUMP",
+            Self::Reload => "RELOAD",
+            Self::Pistol => "PISTOL",
+            Self::AssaultRifle => "ASSAULT RIFLE",
+            Self::Sniper => "SNIPER",
+            Self::Pause => "PAUSE",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(default)]
+pub struct KeyBindings {
+    pub forward: BindingKey,
+    pub backward: BindingKey,
+    pub left: BindingKey,
+    pub right: BindingKey,
+    pub dash: BindingKey,
+    pub jump: BindingKey,
+    pub reload: BindingKey,
+    pub pistol: BindingKey,
+    pub assault_rifle: BindingKey,
+    pub sniper: BindingKey,
+    pub pause: BindingKey,
+}
+
+impl Default for KeyBindings {
+    fn default() -> Self {
+        Self {
+            forward: BindingKey::W,
+            backward: BindingKey::S,
+            left: BindingKey::A,
+            right: BindingKey::D,
+            dash: BindingKey::LeftShift,
+            jump: BindingKey::Space,
+            reload: BindingKey::R,
+            pistol: BindingKey::Digit1,
+            assault_rifle: BindingKey::Digit2,
+            sniper: BindingKey::Digit3,
+            pause: BindingKey::Escape,
+        }
+    }
+}
+
+impl KeyBindings {
+    pub fn get(self, action: BindingAction) -> BindingKey {
+        match action {
+            BindingAction::Forward => self.forward,
+            BindingAction::Backward => self.backward,
+            BindingAction::Left => self.left,
+            BindingAction::Right => self.right,
+            BindingAction::Dash => self.dash,
+            BindingAction::Jump => self.jump,
+            BindingAction::Reload => self.reload,
+            BindingAction::Pistol => self.pistol,
+            BindingAction::AssaultRifle => self.assault_rifle,
+            BindingAction::Sniper => self.sniper,
+            BindingAction::Pause => self.pause,
+        }
+    }
+
+    pub fn set(&mut self, action: BindingAction, key: BindingKey) -> bool {
+        if BindingAction::ALL
+            .iter()
+            .any(|other| *other != action && self.get(*other) == key)
+        {
+            return false;
+        }
+        match action {
+            BindingAction::Forward => self.forward = key,
+            BindingAction::Backward => self.backward = key,
+            BindingAction::Left => self.left = key,
+            BindingAction::Right => self.right = key,
+            BindingAction::Dash => self.dash = key,
+            BindingAction::Jump => self.jump = key,
+            BindingAction::Reload => self.reload = key,
+            BindingAction::Pistol => self.pistol = key,
+            BindingAction::AssaultRifle => self.assault_rifle = key,
+            BindingAction::Sniper => self.sniper = key,
+            BindingAction::Pause => self.pause = key,
+        }
+        true
+    }
+
+    fn are_unique(self) -> bool {
+        BindingAction::ALL
+            .into_iter()
+            .enumerate()
+            .all(|(index, action)| {
+                BindingAction::ALL[index + 1..]
+                    .iter()
+                    .all(|other| self.get(action) != self.get(*other))
+            })
+    }
+}
 
 fn write_atomically(path: &Path, temp_path: &Path, data: &[u8]) -> io::Result<()> {
     let mut temp_file = OpenOptions::new()
@@ -111,9 +328,27 @@ pub fn save_result(stats: MatchStats) -> Result<(), String> {
 
 pub fn load_results_from(path: &std::path::Path) -> Result<Vec<ResultRecord>, String> {
     match fs::read_to_string(path) {
-        Ok(json) => serde_json::from_str(&json).map_err(|error| error.to_string()),
+        Ok(json) => Ok(serde_json::from_str(&json).unwrap_or_default()),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(Vec::new()),
         Err(error) => Err(error.to_string()),
+    }
+}
+
+fn corrupt_results_backup_path(path: &Path) -> PathBuf {
+    let file_name = path
+        .file_name()
+        .unwrap_or_else(|| std::ffi::OsStr::new("results.json"))
+        .to_string_lossy();
+    loop {
+        let sequence = TEMP_FILE_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+        let backup = path.with_file_name(format!(
+            "{file_name}.corrupt.{}.{}",
+            std::process::id(),
+            sequence
+        ));
+        if !backup.exists() {
+            return backup;
+        }
     }
 }
 
@@ -122,7 +357,18 @@ pub fn save_result_to(path: &std::path::Path, record: ResultRecord) -> Result<()
         .parent()
         .ok_or_else(|| "結果保存先が不正です".to_owned())?;
     fs::create_dir_all(parent).map_err(|error| error.to_string())?;
-    let mut records = load_results_from(path)?;
+    let mut records = match fs::read_to_string(path) {
+        Ok(json) => match serde_json::from_str(&json) {
+            Ok(records) => records,
+            Err(_) => {
+                let backup = corrupt_results_backup_path(path);
+                fs::rename(path, backup).map_err(|error| error.to_string())?;
+                Vec::new()
+            }
+        },
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Vec::new(),
+        Err(error) => return Err(error.to_string()),
+    };
     records.push(record);
     if records.len() > MAX_SAVED_RESULTS {
         records.drain(..records.len() - MAX_SAVED_RESULTS);
@@ -136,8 +382,14 @@ pub fn save_result_to(path: &std::path::Path, record: ResultRecord) -> Result<()
 pub struct GameSettings {
     pub mouse_sensitivity: f32,
     pub ads_sensitivity: f32,
+    pub invert_y: bool,
     pub fov: f32,
     pub fullscreen: bool,
+    pub vsync: bool,
+    pub display_resolution: u8,
+    pub render_scale_index: u8,
+    pub fps_limit_index: u8,
+    pub key_bindings: KeyBindings,
     pub infinite_ammo: bool,
     pub volume: f32,
     pub bot_count: u32,
@@ -153,8 +405,14 @@ impl Default for GameSettings {
         Self {
             mouse_sensitivity: 1.0,
             ads_sensitivity: 0.65,
+            invert_y: false,
             fov: 70.0,
             fullscreen: false,
+            vsync: true,
+            display_resolution: 0,
+            render_scale_index: 1,
+            fps_limit_index: 6,
+            key_bindings: KeyBindings::default(),
             infinite_ammo: false,
             volume: 0.7,
             bot_count: 5,
@@ -169,6 +427,39 @@ impl Default for GameSettings {
 impl GameSettings {
     pub fn look_multiplier(&self, ads_progress: f32) -> f32 {
         self.mouse_sensitivity * (1.0 + (self.ads_sensitivity - 1.0) * ads_progress.clamp(0.0, 1.0))
+    }
+
+    pub fn look_y_sign(&self) -> f32 {
+        if self.invert_y {
+            -1.0
+        } else {
+            1.0
+        }
+    }
+
+    pub fn resolution_size(&self) -> (u32, u32) {
+        DISPLAY_RESOLUTIONS[usize::from(self.display_resolution.min(3))]
+    }
+
+    pub fn render_scale(&self) -> f32 {
+        RENDER_SCALES[usize::from(self.render_scale_index.min(3))]
+    }
+
+    pub fn fps_limit(&self) -> Option<u16> {
+        match FPS_LIMITS[usize::from(self.fps_limit_index.min(6))] {
+            0 => None,
+            fps => Some(fps),
+        }
+    }
+
+    pub fn toggle_setting(&mut self, setting: usize) {
+        match setting {
+            0 => self.infinite_ammo = !self.infinite_ammo,
+            1 => self.fullscreen = !self.fullscreen,
+            2 => self.invert_y = !self.invert_y,
+            3 => self.vsync = !self.vsync,
+            _ => {}
+        }
     }
 
     pub fn adjust_sensitivity(&mut self, setting: usize, direction: f32) {
@@ -206,6 +497,17 @@ impl GameSettings {
         } else if setting == 8 {
             self.bot_respawn_seconds =
                 (self.bot_respawn_seconds + direction * 0.25).clamp(0.5, 10.0);
+        } else if setting == 9 && direction != 0.0 {
+            self.display_resolution = (i16::from(self.display_resolution)
+                + direction.signum() as i16)
+                .rem_euclid(4) as u8;
+        } else if setting == 10 && direction != 0.0 {
+            self.render_scale_index = (i16::from(self.render_scale_index)
+                + direction.signum() as i16)
+                .rem_euclid(4) as u8;
+        } else if setting == 11 && direction != 0.0 {
+            self.fps_limit_index =
+                (i16::from(self.fps_limit_index) + direction.signum() as i16).rem_euclid(7) as u8;
         }
     }
 
@@ -222,6 +524,10 @@ impl GameSettings {
             || !(50..=200).contains(&settings.bot_hp)
             || !(0.5..=2.0).contains(&settings.bot_speed)
             || !(0.5..=10.0).contains(&settings.bot_respawn_seconds)
+            || settings.display_resolution > 3
+            || settings.render_scale_index > 3
+            || settings.fps_limit_index > 6
+            || !settings.key_bindings.are_unique()
         {
             return Self::default();
         }

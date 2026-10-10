@@ -184,6 +184,14 @@ fn resized_targets_render_with_matching_depth_and_letterboxed_presentation() {
             // 黒帯部分は黒のまま。
             assert_eq!(&bytes[..4], &[0, 0, 0, 255]);
         }
+
+        renderer
+            .resize_to_display_aspect(&device, 64, 64, 1.0)
+            .unwrap();
+        assert_eq!(renderer.layout().viewport(), Some((0, 0, 64, 64)));
+        assert_eq!(renderer.layout().internal_size(), (64, 64));
+        assert_eq!(renderer.color_texture().size().width, 64);
+        assert_eq!(renderer.color_texture().size().height, 64);
     });
 }
 

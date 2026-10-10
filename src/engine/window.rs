@@ -12,6 +12,7 @@ pub struct WindowRenderer {
     queue: wgpu::Queue,
     config: wgpu::SurfaceConfiguration,
     scene: SceneRenderer,
+    supported_present_modes: Vec<wgpu::PresentMode>,
     drawable: bool,
     pub adapter_info: String,
     pub presentation_info: String,
@@ -64,15 +65,8 @@ impl WindowRenderer {
             .copied()
             .find(|f| !f.is_srgb())
             .unwrap_or(config.format);
-        config.present_mode = if vsync {
-            wgpu::PresentMode::Fifo
-        } else if caps.present_modes.contains(&wgpu::PresentMode::Immediate) {
-            wgpu::PresentMode::Immediate
-        } else if caps.present_modes.contains(&wgpu::PresentMode::Mailbox) {
-            wgpu::PresentMode::Mailbox
-        } else {
-            wgpu::PresentMode::Fifo
-        };
+        config.present_mode = select_present_mode(&caps.present_modes, vsync);
+        let supported_present_modes = caps.present_modes.clone();
         let scene = SceneRenderer::new(&device, mesh, internal.0, internal.1, config.format)?;
         let adapter_info = format!("wgpu {:?}", adapter.get_info());
         let presentation_info = format!(
@@ -86,6 +80,7 @@ impl WindowRenderer {
             queue,
             config,
             scene,
+            supported_present_modes,
             drawable: false,
             adapter_info,
             presentation_info,
@@ -115,8 +110,26 @@ impl WindowRenderer {
         self.drawable = true;
         Ok(())
     }
+    pub fn resize_follow_display_aspect(
+        &mut self,
+        size: PhysicalSize<u32>,
+        render_scale: f32,
+    ) -> Result<(), String> {
+        self.resize(size)?;
+        self.scene
+            .resize_to_display_aspect(&self.device, size.width, size.height, render_scale)
+    }
     pub fn set_internal_size(&mut self, width: u32, height: u32) -> Result<(), String> {
         self.scene.set_internal_size(&self.device, width, height)
+    }
+    pub fn set_vsync(&mut self, enabled: bool) {
+        let mode = select_present_mode(&self.supported_present_modes, enabled);
+        if self.config.present_mode != mode {
+            self.config.present_mode = mode;
+            if self.drawable {
+                self.surface.configure(&self.device, &self.config);
+            }
+        }
     }
     pub fn update_extras(&mut self, world: &Scene, hud: &Scene) {
         self.scene.update_extras(&self.queue, world, hud);
@@ -144,5 +157,44 @@ impl WindowRenderer {
         self.window.pre_present_notify();
         frame.present();
         Ok(true)
+    }
+}
+
+fn select_present_mode(supported: &[wgpu::PresentMode], vsync: bool) -> wgpu::PresentMode {
+    if vsync {
+        return wgpu::PresentMode::Fifo;
+    }
+    if supported.contains(&wgpu::PresentMode::Immediate) {
+        wgpu::PresentMode::Immediate
+    } else if supported.contains(&wgpu::PresentMode::Mailbox) {
+        wgpu::PresentMode::Mailbox
+    } else {
+        wgpu::PresentMode::Fifo
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::select_present_mode;
+    use wgpu::PresentMode;
+
+    #[test]
+    fn present_mode_respects_vsync_and_supported_modes() {
+        assert_eq!(
+            select_present_mode(&[PresentMode::Fifo, PresentMode::Immediate], true),
+            PresentMode::Fifo
+        );
+        assert_eq!(
+            select_present_mode(&[PresentMode::Fifo, PresentMode::Immediate], false),
+            PresentMode::Immediate
+        );
+        assert_eq!(
+            select_present_mode(&[PresentMode::Fifo, PresentMode::Mailbox], false),
+            PresentMode::Mailbox
+        );
+        assert_eq!(
+            select_present_mode(&[PresentMode::Fifo], false),
+            PresentMode::Fifo
+        );
     }
 }

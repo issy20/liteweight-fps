@@ -11,6 +11,40 @@ fn resized_window_preserves_internal_resolution_and_aspect() {
 }
 
 #[test]
+fn adaptive_product_layout_tracks_display_aspect_without_letterboxing() {
+    let mut layout = FrameLayout::new(1280, 720).unwrap();
+
+    layout.resize_to_display_aspect(1000, 1000).unwrap();
+    assert_eq!(layout.internal_size(), (1000, 1000));
+    assert_eq!(layout.viewport(), Some((0, 0, 1000, 1000)));
+
+    layout.resize_to_display_aspect(2100, 900).unwrap();
+    assert_eq!(layout.internal_size(), (2100, 900));
+    assert_eq!(layout.viewport(), Some((0, 0, 2100, 900)));
+
+    layout.resize_to_display_aspect(6000, 1000).unwrap();
+    assert_eq!(layout.internal_size(), (4096, 683));
+    layout.resize_to_display_aspect(1920, 1080).unwrap();
+    assert_eq!(layout.internal_size(), (1920, 1080));
+
+    layout.resize_to_display_aspect(0, 900).unwrap();
+    assert_eq!(layout.viewport(), None);
+    layout.resize_to_display_aspect(900, 900).unwrap();
+    assert_eq!(layout.viewport(), Some((0, 0, 900, 900)));
+}
+
+#[test]
+fn internal_resolution_scale_changes_pixel_density_without_changing_projection_aspect() {
+    let mut layout = FrameLayout::new(1280, 720).unwrap();
+    layout.resize_to_display_scale(1920, 1080, 0.5).unwrap();
+    assert_eq!(layout.internal_size(), (960, 540));
+    assert_eq!(layout.viewport(), Some((0, 0, 1920, 1080)));
+    assert!(layout.resize_to_display_scale(1920, 1080, 0.2).is_err());
+    assert_eq!(layout.viewport(), Some((0, 0, 1920, 1080)));
+    assert_eq!(layout.internal_size(), (960, 540));
+}
+
+#[test]
 fn zero_display_suspends_and_restore_resumes_without_changing_projection() {
     let mut layout = FrameLayout::new(1280, 720).unwrap();
     for size in [(0, 720), (1280, 0), (0, 0)] {

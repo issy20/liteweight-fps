@@ -350,6 +350,30 @@ fn twenty_bot_render_mesh_stays_within_renderer_buffer_limits() {
 }
 
 #[test]
+fn world_mesh_builder_reuses_cpu_buffer_capacity() {
+    let combat = Combat::new(
+        (0..20)
+            .map(|index| Bot::new(Vec3::new(index as f32, 0.0, -5.0)))
+            .collect(),
+    );
+    let mut scratch = liteweight_fps::Scene {
+        vertices: Vec::new(),
+        indices: Vec::new(),
+    };
+
+    liteweight_fps::ui::world_mesh_into(&mut scratch, &combat);
+    let vertex_capacity = scratch.vertices.capacity();
+    let index_capacity = scratch.indices.capacity();
+    let expected = liteweight_fps::ui::world_mesh(&combat);
+    liteweight_fps::ui::world_mesh_into(&mut scratch, &combat);
+
+    assert_eq!(scratch.vertices, expected.vertices);
+    assert_eq!(scratch.indices, expected.indices);
+    assert_eq!(scratch.vertices.capacity(), vertex_capacity);
+    assert_eq!(scratch.indices.capacity(), index_capacity);
+}
+
+#[test]
 fn headshots_and_body_hits_update_independent_score_counts() {
     let mut combat = Combat::new(vec![Bot::new(Vec3::new(0.0, 0.0, -5.0))]);
     let body = combat.shoot(Vec3::new(0.0, 1.0, 0.0), -Vec3::Z, &[], 25);

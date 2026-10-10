@@ -346,6 +346,24 @@ impl SceneRenderer {
     pub fn resize_display(&mut self, width: u32, height: u32) {
         self.layout.resize(width, height);
     }
+    pub fn resize_to_display_aspect(
+        &mut self,
+        device: &wgpu::Device,
+        width: u32,
+        height: u32,
+        scale: f32,
+    ) -> Result<(), String> {
+        let mut next = self.layout;
+        next.resize_to_display_scale(width, height, scale)
+            .map_err(str::to_owned)?;
+        let (internal_width, internal_height) = next.internal_size();
+        Self::check_size(device, internal_width, internal_height)?;
+        if self.layout.internal_size() != (internal_width, internal_height) {
+            self.targets = Targets::new(device, &self.blit_layout, internal_width, internal_height);
+        }
+        self.layout = next;
+        Ok(())
+    }
     pub fn set_internal_size(
         &mut self,
         device: &wgpu::Device,

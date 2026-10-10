@@ -21,6 +21,44 @@ fn settings_restore_defaults_for_corrupt_or_out_of_range_values() {
 }
 
 #[test]
+fn missing_control_and_display_settings_are_adjustable_and_persisted() {
+    use liteweight_fps::persistence::{BindingAction, BindingKey};
+
+    let mut settings = GameSettings::default();
+    assert!(!settings.invert_y);
+    assert_eq!(settings.look_y_sign(), 1.0);
+    assert!(settings.vsync);
+    assert_eq!(settings.resolution_size(), (960, 540));
+    assert_eq!(settings.render_scale(), 0.67);
+    assert_eq!(settings.fps_limit(), None);
+    assert_eq!(
+        settings.key_bindings.get(BindingAction::Forward),
+        BindingKey::W
+    );
+
+    settings.toggle_setting(2);
+    assert!(settings.invert_y);
+    assert_eq!(settings.look_y_sign(), -1.0);
+    settings.toggle_setting(3);
+    assert!(!settings.vsync);
+    settings.adjust_setting(9, 1.0);
+    settings.adjust_setting(10, 1.0);
+    settings.adjust_setting(11, -1.0);
+    assert_eq!(settings.resolution_size(), (1280, 720));
+    assert_eq!(settings.render_scale(), 0.75);
+    assert_eq!(settings.fps_limit(), Some(240));
+    assert!(settings
+        .key_bindings
+        .set(BindingAction::Forward, BindingKey::E));
+    assert!(!settings
+        .key_bindings
+        .set(BindingAction::Backward, BindingKey::E));
+
+    let restored = GameSettings::from_json(&serde_json::to_string(&settings).unwrap());
+    assert_eq!(restored, settings);
+}
+
+#[test]
 fn settings_round_trip_and_partial_files_keep_safe_defaults() {
     let settings = GameSettings {
         mouse_sensitivity: 1.4,
@@ -199,18 +237,29 @@ fn font_text_layout_uses_proportional_glyphs_and_valid_quad_indices() {
 
 #[test]
 fn settings_text_uses_smooth_font_mesh_inside_clip_bounds() {
-    let mesh = liteweight_fps::ui::settings_text(&GameSettings::default(), 0, [1280, 720]);
-    assert!(!mesh.vertices.is_empty());
-    assert!(mesh.vertices.len() < 4096);
-    assert!(mesh.indices.len() < 6144);
-    assert!(mesh.vertices.iter().all(|vertex| vertex
-        .position
-        .iter()
-        .all(|coordinate| (-1.0..=1.0).contains(coordinate))));
-    assert!(mesh
-        .indices
-        .iter()
-        .all(|index| usize::from(*index) < mesh.vertices.len()));
+    for viewport in [[1280, 720], [960, 540], [640, 360]] {
+        for selected in [0, 9, 18] {
+            let mesh = liteweight_fps::ui::settings_text_with_bindings(
+                &GameSettings::default(),
+                selected,
+                viewport,
+                false,
+                5,
+                true,
+            );
+            assert!(!mesh.vertices.is_empty());
+            assert!(mesh.vertices.len() < 4096);
+            assert!(mesh.indices.len() < 6144);
+            assert!(mesh.vertices.iter().all(|vertex| vertex
+                .position
+                .iter()
+                .all(|coordinate| (-1.0..=1.0).contains(coordinate))));
+            assert!(mesh
+                .indices
+                .iter()
+                .all(|index| usize::from(*index) < mesh.vertices.len()));
+        }
+    }
 }
 
 #[test]
@@ -228,6 +277,7 @@ fn gameplay_hud_text_fits_common_internal_resolutions_for_both_modes() {
                     magazine: 30,
                     kills: 12,
                     infinite_ammo: false,
+                    key_bindings: GameSettings::default().key_bindings,
                 },
                 viewport,
             );
@@ -238,6 +288,104 @@ fn gameplay_hud_text_fits_common_internal_resolutions_for_both_modes() {
                 .all(|coordinate| (-1.0..=1.0).contains(coordinate))));
         }
     }
+}
+
+#[test]
+fn infinite_ammo_hud_renders_infinity_and_hides_magazine_digits() {
+    use liteweight_fps::{
+        engine::text::FontAtlas,
+        simulation::{
+            combat::Combat,
+            game_mode::SessionMode,
+            weapon::{Loadout, WeaponKind},
+        },
+        ui::{game_hud_text, GameHudInfo},
+    };
+
+    let infinity = FontAtlas::shared().layout("∞", [0.0, 0.0], 24.0, [1280, 720], [1.0; 4]);
+    assert_eq!(infinity.mesh.vertices.len(), 4);
+
+    let info = |infinite_ammo| GameHudInfo {
+        mode: SessionMode::FreeTraining,
+        remaining: None,
+        weapon: WeaponKind::AssaultRifle,
+        ammo: 30,
+        magazine: 30,
+        kills: 0,
+        infinite_ammo,
+        key_bindings: GameSettings::default().key_bindings,
+    };
+    let finite_text = game_hud_text(info(false), [1280, 720]);
+    let infinite_text = game_hud_text(info(true), [1280, 720]);
+    assert_eq!(
+        finite_text.vertices.len(),
+        infinite_text.vertices.len() + 16
+    );
+
+    let weapon = Loadout::default();
+    let combat = Combat::default();
+    let finite = liteweight_fps::ui::hud_mesh_with_menu_and_ammo(
+        weapon.active(),
+        &combat,
+        16.0 / 9.0,
+        0.0,
+        None,
+        false,
+    );
+    let infinite = liteweight_fps::ui::hud_mesh_with_menu_and_ammo(
+        weapon.active(),
+        &combat,
+        16.0 / 9.0,
+        0.0,
+        None,
+        true,
+    );
+    assert!(infinite.vertices.len() < finite.vertices.len());
+}
+
+#[test]
+fn hud_mesh_builder_reuses_cpu_buffer_capacity() {
+    use liteweight_fps::simulation::{combat::Combat, weapon::Loadout};
+
+    let loadout = Loadout::default();
+    let combat = Combat::default();
+    let mut scratch = liteweight_fps::Scene {
+        vertices: Vec::new(),
+        indices: Vec::new(),
+    };
+    liteweight_fps::ui::hud_mesh_with_menu_and_ammo_into(
+        &mut scratch,
+        loadout.active(),
+        &combat,
+        16.0 / 9.0,
+        0.0,
+        None,
+        false,
+    );
+    let vertex_capacity = scratch.vertices.capacity();
+    let index_capacity = scratch.indices.capacity();
+    let expected = liteweight_fps::ui::hud_mesh_with_menu_and_ammo(
+        loadout.active(),
+        &combat,
+        16.0 / 9.0,
+        0.0,
+        None,
+        false,
+    );
+    liteweight_fps::ui::hud_mesh_with_menu_and_ammo_into(
+        &mut scratch,
+        loadout.active(),
+        &combat,
+        16.0 / 9.0,
+        0.0,
+        None,
+        false,
+    );
+
+    assert_eq!(scratch.vertices, expected.vertices);
+    assert_eq!(scratch.indices, expected.indices);
+    assert_eq!(scratch.vertices.capacity(), vertex_capacity);
+    assert_eq!(scratch.indices.capacity(), index_capacity);
 }
 
 #[test]
@@ -252,9 +400,21 @@ fn pause_menu_selects_resume_sensitivity_and_exit_actions() {
     menu.move_down();
     assert_eq!(menu.setting_index(), Some(2));
     menu.move_down();
-    assert_eq!(menu.toggle_setting_index(), Some(0));
+    assert_eq!(menu.toggle_setting_index(), Some(2));
+    menu.move_down();
+    assert_eq!(menu.selected_index(), 5);
+    menu.move_down();
+    assert_eq!(menu.setting_index(), Some(9));
+    menu.move_down();
+    assert_eq!(menu.setting_index(), Some(10));
     menu.move_down();
     assert_eq!(menu.toggle_setting_index(), Some(1));
+    menu.move_down();
+    assert_eq!(menu.toggle_setting_index(), Some(3));
+    menu.move_down();
+    assert_eq!(menu.setting_index(), Some(11));
+    menu.move_down();
+    assert_eq!(menu.toggle_setting_index(), Some(0));
     menu.move_down();
     assert_eq!(menu.setting_index(), Some(5));
     menu.move_down();
@@ -276,17 +436,17 @@ fn pause_menu_selects_resume_sensitivity_and_exit_actions() {
 #[test]
 fn fullscreen_setting_is_a_toggle_menu_item_and_is_shown_in_settings() {
     let mut menu = PauseSelection::default();
-    for _ in 0..5 {
+    for _ in 0..8 {
         menu.move_down();
     }
     assert_eq!(menu.toggle_setting_index(), Some(1));
-    assert_eq!(menu.selected_index(), 5);
+    assert_eq!(menu.selected_index(), 8);
 
     let settings = GameSettings {
         fullscreen: true,
         ..GameSettings::default()
     };
-    let text = liteweight_fps::ui::settings_text(&settings, 5, [1280, 720]);
+    let text = liteweight_fps::ui::settings_text(&settings, 8, [1280, 720]);
     assert!(!text.vertices.is_empty());
 }
 
@@ -345,6 +505,48 @@ fn challenge_result_history_round_trips_and_keeps_newest_entries() {
     assert_eq!(records.first().unwrap().recorded_at_unix_seconds, 6);
     assert_eq!(records.last().unwrap().recorded_at_unix_seconds, 55);
     std::fs::remove_file(path).unwrap();
+}
+
+#[test]
+fn saving_after_corrupt_result_history_quarantines_it_and_recovers() {
+    let path = std::env::temp_dir().join(format!(
+        "liteweight-fps-corrupt-results-{}.json",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_file(&path);
+    let original = b"[{ broken result history";
+    std::fs::write(&path, original).unwrap();
+
+    assert!(liteweight_fps::persistence::load_results_from(&path)
+        .unwrap()
+        .is_empty());
+    let record = liteweight_fps::persistence::ResultRecord {
+        recorded_at_unix_seconds: 123,
+        stats: Default::default(),
+    };
+    liteweight_fps::persistence::save_result_to(&path, record).unwrap();
+    assert_eq!(
+        liteweight_fps::persistence::load_results_from(&path)
+            .unwrap()
+            .as_slice(),
+        &[record]
+    );
+
+    let file_name = path.file_name().unwrap().to_string_lossy();
+    let backup = std::fs::read_dir(path.parent().unwrap())
+        .unwrap()
+        .filter_map(Result::ok)
+        .map(|entry| entry.path())
+        .find(|candidate| {
+            candidate.file_name().is_some_and(|name| {
+                name.to_string_lossy()
+                    .starts_with(&format!("{file_name}.corrupt."))
+            })
+        })
+        .expect("corrupt history should be preserved beside the new history");
+    assert_eq!(std::fs::read(&backup).unwrap(), original);
+    std::fs::remove_file(path).unwrap();
+    std::fs::remove_file(backup).unwrap();
 }
 
 #[test]

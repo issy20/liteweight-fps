@@ -1,4 +1,4 @@
-use liteweight_fps::persistence::GameSettings;
+use liteweight_fps::persistence::{BindingAction, BindingKey, GameSettings};
 use liteweight_fps::ui::menu::{PauseMenuAction, PauseSelection, TitleMenuAction, TitleSelection};
 use liteweight_fps::{
     engine::{
@@ -29,8 +29,88 @@ use winit::{
     window::{CursorGrabMode, Fullscreen, Window, WindowId},
 };
 
+fn binding_key_to_code(key: BindingKey) -> KeyCode {
+    match key {
+        BindingKey::A => KeyCode::KeyA,
+        BindingKey::B => KeyCode::KeyB,
+        BindingKey::C => KeyCode::KeyC,
+        BindingKey::D => KeyCode::KeyD,
+        BindingKey::E => KeyCode::KeyE,
+        BindingKey::F => KeyCode::KeyF,
+        BindingKey::G => KeyCode::KeyG,
+        BindingKey::H => KeyCode::KeyH,
+        BindingKey::I => KeyCode::KeyI,
+        BindingKey::J => KeyCode::KeyJ,
+        BindingKey::K => KeyCode::KeyK,
+        BindingKey::L => KeyCode::KeyL,
+        BindingKey::M => KeyCode::KeyM,
+        BindingKey::N => KeyCode::KeyN,
+        BindingKey::O => KeyCode::KeyO,
+        BindingKey::P => KeyCode::KeyP,
+        BindingKey::Q => KeyCode::KeyQ,
+        BindingKey::R => KeyCode::KeyR,
+        BindingKey::S => KeyCode::KeyS,
+        BindingKey::T => KeyCode::KeyT,
+        BindingKey::U => KeyCode::KeyU,
+        BindingKey::V => KeyCode::KeyV,
+        BindingKey::W => KeyCode::KeyW,
+        BindingKey::X => KeyCode::KeyX,
+        BindingKey::Y => KeyCode::KeyY,
+        BindingKey::Z => KeyCode::KeyZ,
+        BindingKey::Space => KeyCode::Space,
+        BindingKey::LeftShift => KeyCode::ShiftLeft,
+        BindingKey::RightShift => KeyCode::ShiftRight,
+        BindingKey::Escape => KeyCode::Escape,
+        BindingKey::Digit1 => KeyCode::Digit1,
+        BindingKey::Digit2 => KeyCode::Digit2,
+        BindingKey::Digit3 => KeyCode::Digit3,
+    }
+}
+
+fn code_to_binding_key(code: KeyCode) -> Option<BindingKey> {
+    Some(match code {
+        KeyCode::KeyA => BindingKey::A,
+        KeyCode::KeyB => BindingKey::B,
+        KeyCode::KeyC => BindingKey::C,
+        KeyCode::KeyD => BindingKey::D,
+        KeyCode::KeyE => BindingKey::E,
+        KeyCode::KeyF => BindingKey::F,
+        KeyCode::KeyG => BindingKey::G,
+        KeyCode::KeyH => BindingKey::H,
+        KeyCode::KeyI => BindingKey::I,
+        KeyCode::KeyJ => BindingKey::J,
+        KeyCode::KeyK => BindingKey::K,
+        KeyCode::KeyL => BindingKey::L,
+        KeyCode::KeyM => BindingKey::M,
+        KeyCode::KeyN => BindingKey::N,
+        KeyCode::KeyO => BindingKey::O,
+        KeyCode::KeyP => BindingKey::P,
+        KeyCode::KeyQ => BindingKey::Q,
+        KeyCode::KeyR => BindingKey::R,
+        KeyCode::KeyS => BindingKey::S,
+        KeyCode::KeyT => BindingKey::T,
+        KeyCode::KeyU => BindingKey::U,
+        KeyCode::KeyV => BindingKey::V,
+        KeyCode::KeyW => BindingKey::W,
+        KeyCode::KeyX => BindingKey::X,
+        KeyCode::KeyY => BindingKey::Y,
+        KeyCode::KeyZ => BindingKey::Z,
+        KeyCode::Space => BindingKey::Space,
+        KeyCode::ShiftLeft => BindingKey::LeftShift,
+        KeyCode::ShiftRight => BindingKey::RightShift,
+        KeyCode::Escape => BindingKey::Escape,
+        KeyCode::Digit1 => BindingKey::Digit1,
+        KeyCode::Digit2 => BindingKey::Digit2,
+        KeyCode::Digit3 => BindingKey::Digit3,
+        _ => return None,
+    })
+}
+
 struct App {
     renderer: Option<WindowRenderer>,
+    world_mesh: liteweight_fps::Scene,
+    hud_mesh: liteweight_fps::Scene,
+    text_mesh: liteweight_fps::engine::text::TextMesh,
     benchmark: Option<Run>,
     smoke: bool,
     smoke_step: usize,
@@ -51,12 +131,15 @@ struct App {
     results_screen: bool,
     title_selection: TitleSelection,
     pause_selection: PauseSelection,
+    binding_selection: usize,
+    waiting_for_binding: bool,
     audio: Option<Audio>,
     title: String,
     capture_requested: bool,
     captured: bool,
     window_focused: bool,
     fixed: FixedStep,
+    next_frame_deadline: Option<Instant>,
     occluded: bool,
     suspended: bool,
     error: Option<String>,
@@ -90,7 +173,10 @@ impl App {
             .map(|renderer| {
                 let (width, height) = renderer.internal_size();
                 let (_, offset) = self.weapons.presentation();
-                (width as f32 / height.max(1) as f32, offset)
+                (
+                    width as f32 / height.max(1) as f32,
+                    offset + self.player.dash_weapon_offset(),
+                )
             })
             .unwrap_or((16.0 / 9.0, 0.0));
         let fov = self.weapons.fov_with_base(self.settings.fov);
@@ -244,6 +330,27 @@ impl App {
                     audio.set_volume(self.settings.volume);
                 }
             }
+            9 => {
+                if !self.settings.fullscreen {
+                    if let Some(renderer) = &self.renderer {
+                        let (width, height) = self.settings.resolution_size();
+                        let _ = renderer
+                            .window
+                            .request_inner_size(LogicalSize::new(width as f64, height as f64));
+                    }
+                }
+            }
+            10 => {
+                if let Some(renderer) = &mut self.renderer {
+                    let size = renderer.window.inner_size();
+                    if let Err(error) =
+                        renderer.resize_follow_display_aspect(size, self.settings.render_scale())
+                    {
+                        self.error = Some(error);
+                    }
+                }
+            }
+            11 => self.next_frame_deadline = None,
             _ => {}
         }
     }
@@ -254,7 +361,27 @@ impl App {
                 .fullscreen
                 .then(|| Fullscreen::Borderless(renderer.window.current_monitor()));
             renderer.window.set_fullscreen(fullscreen);
+            if !self.settings.fullscreen {
+                let (width, height) = self.settings.resolution_size();
+                let _ = renderer
+                    .window
+                    .request_inner_size(LogicalSize::new(width as f64, height as f64));
+            }
         }
+    }
+    fn apply_vsync(&mut self) {
+        if let Some(renderer) = &mut self.renderer {
+            renderer.set_vsync(self.settings.vsync);
+        }
+    }
+    fn toggle_setting(&mut self, setting: usize) {
+        self.settings.toggle_setting(setting);
+        match setting {
+            1 => self.apply_fullscreen(),
+            3 => self.apply_vsync(),
+            _ => {}
+        }
+        self.save_settings();
     }
     fn update_title(&mut self) {
         if let Some(r) = &self.renderer {
@@ -277,15 +404,29 @@ impl ApplicationHandler for App {
         self.suspended = false;
         self.clock = Instant::now();
         if let Some(r) = &mut self.renderer {
-            if let Err(e) = r.resize(r.window.inner_size()) {
+            let size = r.window.inner_size();
+            let result = if self.benchmark.is_none() {
+                r.resize_follow_display_aspect(size, self.settings.render_scale())
+            } else {
+                r.resize(size)
+            };
+            if let Err(e) = result {
                 self.fail(event_loop, e);
             }
             return;
         }
+        let (window_width, window_height) = if self.benchmark.is_none() {
+            self.settings.resolution_size()
+        } else {
+            (960, 540)
+        };
         let mut attributes = Window::default_attributes()
             .with_title("liteweight-fps")
             .with_resizable(self.benchmark.is_none())
-            .with_inner_size(LogicalSize::new(960., 540.));
+            .with_inner_size(LogicalSize::new(
+                f64::from(window_width),
+                f64::from(window_height),
+            ));
         if self.benchmark.is_none() && self.settings.fullscreen {
             attributes = attributes.with_fullscreen(Some(Fullscreen::Borderless(None)));
         }
@@ -306,7 +447,7 @@ impl ApplicationHandler for App {
             (
                 world::arena_scaled(world::arena_scale_for_bot_count(self.settings.bot_count)),
                 (1280, 720),
-                true,
+                self.settings.vsync,
             )
         };
         match pollster::block_on(WindowRenderer::new(window, &mesh, internal, vsync)) {
@@ -321,6 +462,13 @@ impl ApplicationHandler for App {
                     run.set_initial_display(size.width, size.height);
                 }
                 if self.benchmark.is_none() {
+                    let size = r.window.inner_size();
+                    if let Err(error) =
+                        r.resize_follow_display_aspect(size, self.settings.render_scale())
+                    {
+                        self.fail(event_loop, error);
+                        return;
+                    }
                     r.prepare_text();
                 }
                 self.renderer = Some(r);
@@ -371,7 +519,8 @@ impl ApplicationHandler for App {
                         * 0.002
                         * self
                             .settings
-                            .look_multiplier(self.weapons.active().ads_progress),
+                            .look_multiplier(self.weapons.active().ads_progress)
+                        * self.settings.look_y_sign(),
                 );
             }
         }
@@ -387,7 +536,12 @@ impl ApplicationHandler for App {
                     run.measurement.resize(size.width, size.height);
                 }
                 if let Some(r) = &mut self.renderer {
-                    if let Err(e) = r.resize(size) {
+                    let result = if self.benchmark.is_none() {
+                        r.resize_follow_display_aspect(size, self.settings.render_scale())
+                    } else {
+                        r.resize(size)
+                    };
+                    if let Err(e) = result {
                         self.fail(event_loop, e);
                     }
                 }
@@ -437,7 +591,26 @@ impl ApplicationHandler for App {
                 let pressed = event.state == ElementState::Pressed;
                 let gameplay_active =
                     !self.title_screen && !self.settings_menu && !self.results_screen;
-                if self.benchmark.is_none() {
+                if self.benchmark.is_none() && self.waiting_for_binding {
+                    if pressed && !event.repeat {
+                        if let PhysicalKey::Code(code) = event.physical_key {
+                            if code == KeyCode::Escape {
+                                self.waiting_for_binding = false;
+                                self.set_notice("KEY BINDING CANCELLED", "");
+                            } else if let Some(key) = code_to_binding_key(code) {
+                                let action = BindingAction::ALL
+                                    [self.binding_selection % BindingAction::ALL.len()];
+                                if self.settings.key_bindings.set(action, key) {
+                                    self.waiting_for_binding = false;
+                                    self.save_settings();
+                                    self.set_notice("KEY BINDING UPDATED", "");
+                                } else {
+                                    self.set_notice("KEY ALREADY IN USE", "Choose another key");
+                                }
+                            }
+                        }
+                    }
+                } else if self.benchmark.is_none() {
                     match event.physical_key {
                         PhysicalKey::Code(KeyCode::ArrowUp)
                             if pressed && !event.repeat && self.title_screen =>
@@ -481,7 +654,15 @@ impl ApplicationHandler for App {
                         {
                             self.begin_session(self.session.mode());
                         }
-                        PhysicalKey::Code(KeyCode::Escape) if pressed && !event.repeat => {
+                        PhysicalKey::Code(code)
+                            if pressed
+                                && !event.repeat
+                                && (code == KeyCode::Escape
+                                    || code
+                                        == binding_key_to_code(
+                                            self.settings.key_bindings.get(BindingAction::Pause),
+                                        )) =>
+                        {
                             if self.settings_menu {
                                 self.resume_from_pause();
                             } else {
@@ -501,19 +682,13 @@ impl ApplicationHandler for App {
                                 Some(PauseMenuAction::Resume) => self.resume_from_pause(),
                                 Some(PauseMenuAction::Exit) => self.finish(event_loop, false),
                                 None => {
-                                    match self.pause_selection.toggle_setting_index() {
-                                        Some(0) => {
-                                            self.settings.infinite_ammo =
-                                                !self.settings.infinite_ammo
-                                        }
-                                        Some(1) => {
-                                            self.settings.fullscreen = !self.settings.fullscreen;
-                                            self.apply_fullscreen();
-                                        }
-                                        _ => {}
-                                    }
-                                    if self.pause_selection.toggle_setting_index().is_some() {
-                                        self.save_settings();
+                                    if self.pause_selection.selected_index() == 5 {
+                                        self.waiting_for_binding = true;
+                                        self.set_notice("PRESS A KEY TO REBIND", "ESC cancels");
+                                    } else if let Some(index) =
+                                        self.pause_selection.toggle_setting_index()
+                                    {
+                                        self.toggle_setting(index);
                                     }
                                 }
                             }
@@ -531,7 +706,11 @@ impl ApplicationHandler for App {
                         PhysicalKey::Code(KeyCode::ArrowLeft)
                             if pressed && !event.repeat && self.settings_menu =>
                         {
-                            if let Some(index) = self.pause_selection.setting_index() {
+                            if self.pause_selection.selected_index() == 5 {
+                                self.binding_selection =
+                                    (self.binding_selection + BindingAction::ALL.len() - 1)
+                                        % BindingAction::ALL.len();
+                            } else if let Some(index) = self.pause_selection.setting_index() {
                                 self.settings.adjust_setting(index, -1.0);
                                 self.apply_runtime_setting(index);
                                 self.save_settings();
@@ -540,7 +719,10 @@ impl ApplicationHandler for App {
                         PhysicalKey::Code(KeyCode::ArrowRight)
                             if pressed && !event.repeat && self.settings_menu =>
                         {
-                            if let Some(index) = self.pause_selection.setting_index() {
+                            if self.pause_selection.selected_index() == 5 {
+                                self.binding_selection =
+                                    (self.binding_selection + 1) % BindingAction::ALL.len();
+                            } else if let Some(index) = self.pause_selection.setting_index() {
                                 self.settings.adjust_setting(index, 1.0);
                                 self.apply_runtime_setting(index);
                                 self.save_settings();
@@ -550,58 +732,115 @@ impl ApplicationHandler for App {
                             if pressed && !event.repeat && self.settings_menu =>
                         {
                             self.settings = GameSettings::default();
+                            self.binding_selection = 0;
+                            self.waiting_for_binding = false;
                             for index in [3, 4, 5, 6, 7, 8] {
                                 self.apply_runtime_setting(index);
                             }
                             self.apply_fullscreen();
+                            self.apply_vsync();
+                            self.apply_runtime_setting(9);
+                            self.apply_runtime_setting(10);
+                            self.next_frame_deadline = None;
                             self.save_settings();
                         }
-                        PhysicalKey::Code(KeyCode::KeyA)
-                            if Input::should_update_movement_key(pressed, gameplay_active) =>
+                        PhysicalKey::Code(code)
+                            if code
+                                == binding_key_to_code(
+                                    self.settings.key_bindings.get(BindingAction::Left),
+                                )
+                                && Input::should_update_movement_key(pressed, gameplay_active) =>
                         {
                             self.input.left = pressed
                         }
-                        PhysicalKey::Code(KeyCode::KeyD)
-                            if Input::should_update_movement_key(pressed, gameplay_active) =>
+                        PhysicalKey::Code(code)
+                            if code
+                                == binding_key_to_code(
+                                    self.settings.key_bindings.get(BindingAction::Right),
+                                )
+                                && Input::should_update_movement_key(pressed, gameplay_active) =>
                         {
                             self.input.right = pressed
                         }
-                        PhysicalKey::Code(KeyCode::KeyW)
-                            if Input::should_update_movement_key(pressed, gameplay_active) =>
+                        PhysicalKey::Code(code)
+                            if code
+                                == binding_key_to_code(
+                                    self.settings.key_bindings.get(BindingAction::Forward),
+                                )
+                                && Input::should_update_movement_key(pressed, gameplay_active) =>
                         {
                             self.input.forward = pressed
                         }
-                        PhysicalKey::Code(KeyCode::KeyS)
-                            if Input::should_update_movement_key(pressed, gameplay_active) =>
+                        PhysicalKey::Code(code)
+                            if code
+                                == binding_key_to_code(
+                                    self.settings.key_bindings.get(BindingAction::Backward),
+                                )
+                                && Input::should_update_movement_key(pressed, gameplay_active) =>
                         {
                             self.input.back = pressed
                         }
-                        PhysicalKey::Code(KeyCode::ShiftLeft | KeyCode::ShiftRight)
-                            if Input::should_update_movement_key(pressed, gameplay_active) =>
+                        PhysicalKey::Code(code)
+                            if code
+                                == binding_key_to_code(
+                                    self.settings.key_bindings.get(BindingAction::Dash),
+                                )
+                                && Input::should_update_movement_key(pressed, gameplay_active) =>
                         {
                             self.input.dash = pressed
                         }
-                        PhysicalKey::Code(KeyCode::Space)
+                        PhysicalKey::Code(code)
                             if pressed
                                 && !event.repeat
                                 && !self.title_screen
                                 && !self.settings_menu
-                                && !self.results_screen =>
+                                && !self.results_screen
+                                && code
+                                    == binding_key_to_code(
+                                        self.settings.key_bindings.get(BindingAction::Jump),
+                                    ) =>
                         {
                             self.input.jump = true
                         }
                         _ if !self.captured => {}
-                        PhysicalKey::Code(KeyCode::Digit1) if pressed && !event.repeat => {
+                        PhysicalKey::Code(code)
+                            if code
+                                == binding_key_to_code(
+                                    self.settings.key_bindings.get(BindingAction::Pistol),
+                                )
+                                && pressed
+                                && !event.repeat =>
+                        {
                             self.switch_weapon(WeaponKind::Pistol);
                         }
-                        PhysicalKey::Code(KeyCode::Digit2) if pressed && !event.repeat => {
+                        PhysicalKey::Code(code)
+                            if code
+                                == binding_key_to_code(
+                                    self.settings.key_bindings.get(BindingAction::AssaultRifle),
+                                )
+                                && pressed
+                                && !event.repeat =>
+                        {
                             self.switch_weapon(WeaponKind::AssaultRifle);
                         }
-                        PhysicalKey::Code(KeyCode::Digit3) if pressed && !event.repeat => {
+                        PhysicalKey::Code(code)
+                            if code
+                                == binding_key_to_code(
+                                    self.settings.key_bindings.get(BindingAction::Sniper),
+                                )
+                                && pressed
+                                && !event.repeat =>
+                        {
                             self.switch_weapon(WeaponKind::Sniper);
                         }
-                        PhysicalKey::Code(KeyCode::KeyR)
-                            if pressed && !event.repeat && !self.infinite_ammo_active() =>
+                        PhysicalKey::Code(code)
+                            if pressed
+                                && !event.repeat
+                                && !self.infinite_ammo_active()
+                                && code
+                                    == binding_key_to_code(
+                                        self.settings.key_bindings.get(BindingAction::Reload),
+                                    ) =>
                         {
                             self.fire_input.reload = true;
                         }
@@ -687,40 +926,52 @@ impl ApplicationHandler for App {
                 } else {
                     let aspect = w as f32 / h as f32;
                     let (displayed_weapon, switch_offset) = self.weapons.presentation();
-                    let mut hud = liteweight_fps::ui::hud_mesh_with_menu(
+                    liteweight_fps::ui::hud_mesh_with_menu_and_ammo_into(
+                        &mut self.hud_mesh,
                         displayed_weapon,
                         &self.combat,
                         aspect,
                         switch_offset,
                         self.settings_menu
                             .then_some((&self.settings, self.pause_selection.selected_index())),
+                        infinite_ammo_active,
                     );
                     if self.title_screen {
                         liteweight_fps::ui::title_overlay(
-                            &mut hud,
+                            &mut self.hud_mesh,
                             self.title_selection.selected_index(),
                             aspect,
                         );
                     } else if self.results_screen {
-                        liteweight_fps::ui::results_overlay(&mut hud, aspect);
+                        liteweight_fps::ui::results_overlay(&mut self.hud_mesh, aspect);
                     }
-                    r.update_extras(&liteweight_fps::ui::world_mesh(&self.combat), &hud);
-                    let mut text = if self.title_screen {
-                        liteweight_fps::ui::title_text(
+                    liteweight_fps::ui::world_mesh_into(&mut self.world_mesh, &self.combat);
+                    r.update_extras(&self.world_mesh, &self.hud_mesh);
+                    if self.title_screen {
+                        liteweight_fps::ui::title_text_into(
+                            &mut self.text_mesh,
                             self.title_selection.selected_index(),
                             [w, h],
-                        )
+                        );
                     } else if self.results_screen {
-                        liteweight_fps::ui::results_text(self.session.stats(), [w, h])
+                        liteweight_fps::ui::results_text_into(
+                            &mut self.text_mesh,
+                            self.session.stats(),
+                            [w, h],
+                        );
                     } else if self.settings_menu {
-                        liteweight_fps::ui::settings_text_for_context(
+                        liteweight_fps::ui::settings_text_with_bindings_into(
+                            &mut self.text_mesh,
                             &self.settings,
                             self.pause_selection.selected_index(),
                             [w, h],
                             self.settings_from_title,
+                            self.binding_selection,
+                            self.waiting_for_binding,
                         )
                     } else {
-                        liteweight_fps::ui::game_hud_text(
+                        liteweight_fps::ui::game_hud_text_into(
+                            &mut self.text_mesh,
                             liteweight_fps::ui::GameHudInfo {
                                 mode: self.session.mode(),
                                 remaining: self.session.remaining_seconds(),
@@ -729,10 +980,11 @@ impl ApplicationHandler for App {
                                 magazine: self.weapons.active().data.magazine,
                                 kills: self.combat.kills,
                                 infinite_ammo: infinite_ammo_active,
+                                key_bindings: self.settings.key_bindings,
                             },
                             [w, h],
-                        )
-                    };
+                        );
+                    }
                     if let Some(notice) = &notice {
                         let notice_y = if self.title_screen {
                             0.34
@@ -743,9 +995,14 @@ impl ApplicationHandler for App {
                         } else {
                             0.76
                         };
-                        liteweight_fps::ui::append_notice_text(&mut text, notice, [w, h], notice_y);
+                        liteweight_fps::ui::append_notice_text(
+                            &mut self.text_mesh,
+                            notice,
+                            [w, h],
+                            notice_y,
+                        );
                     }
-                    r.update_text(&text);
+                    r.update_text(&self.text_mesh);
                     self.player
                         .view_matrix_with(aspect, self.weapons.fov_with_base(self.settings.fov))
                 };
@@ -795,10 +1052,18 @@ impl ApplicationHandler for App {
                             let (w, h) = sizes[self.smoke_step];
                             let _ = r.window.request_inner_size(LogicalSize::new(w, h));
                             // APIレベルの0サイズ休止も確認。実際の最小化は手動確認する。
-                            if let Err(e) = r
-                                .resize(PhysicalSize::new(0, 0))
-                                .and_then(|_| r.resize(r.window.inner_size()))
-                            {
+                            let result = r.resize(PhysicalSize::new(0, 0)).and_then(|_| {
+                                let size = r.window.inner_size();
+                                if self.benchmark.is_none() {
+                                    r.resize_follow_display_aspect(
+                                        size,
+                                        self.settings.render_scale(),
+                                    )
+                                } else {
+                                    r.resize(size)
+                                }
+                            });
+                            if let Err(e) = result {
                                 self.fail(event_loop, e);
                                 return;
                             }
@@ -821,9 +1086,26 @@ impl ApplicationHandler for App {
             && !self.suspended
             && !self.occluded;
         if drawable {
-            event_loop.set_control_flow(ControlFlow::Poll);
-            if let Some(r) = &self.renderer {
-                r.window.request_redraw();
+            if let Some(fps) = self.settings.fps_limit() {
+                let now = Instant::now();
+                let deadline = match self.next_frame_deadline {
+                    Some(deadline) if deadline > now => deadline,
+                    _ => {
+                        let deadline = now + Duration::from_secs_f64(1.0 / f64::from(fps));
+                        self.next_frame_deadline = Some(deadline);
+                        if let Some(renderer) = &self.renderer {
+                            renderer.window.request_redraw();
+                        }
+                        deadline
+                    }
+                };
+                event_loop.set_control_flow(ControlFlow::WaitUntil(deadline));
+            } else {
+                self.next_frame_deadline = None;
+                event_loop.set_control_flow(ControlFlow::Poll);
+                if let Some(renderer) = &self.renderer {
+                    renderer.window.request_redraw();
+                }
             }
         } else if self.smoke {
             event_loop.set_control_flow(ControlFlow::WaitUntil(
@@ -882,6 +1164,15 @@ fn main() {
     let arena_scale = world::arena_scale_for_bot_count(settings.bot_count);
     let mut app = App {
         renderer: None,
+        world_mesh: liteweight_fps::Scene {
+            vertices: Vec::new(),
+            indices: Vec::new(),
+        },
+        hud_mesh: liteweight_fps::Scene {
+            vertices: Vec::new(),
+            indices: Vec::new(),
+        },
+        text_mesh: liteweight_fps::engine::text::TextMesh::default(),
         benchmark: options.map(|o| Run::new(o, start, String::new())),
         smoke,
         smoke_step: 0,
@@ -902,12 +1193,15 @@ fn main() {
         results_screen: false,
         title_selection: TitleSelection::default(),
         pause_selection: PauseSelection::default(),
+        binding_selection: 0,
+        waiting_for_binding: false,
         audio: None,
         title: String::new(),
         capture_requested: false,
         captured: false,
         window_focused: false,
         fixed: FixedStep::new(60, 5),
+        next_frame_deadline: None,
         occluded: false,
         suspended: false,
         error: None,

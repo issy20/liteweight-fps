@@ -229,26 +229,63 @@ fn camera_matrix_uses_eye_position_and_look_direction() {
 fn wasd_moves_relative_to_yaw_and_normalizes_diagonal() {
     let mut p = Player::new();
     let dt = 1.0 / 60.0;
-    // 初期向きは前方-Z。Wで-Z方向へ歩行速度で進む。
-    p.move_with_input(input(false, false, true, false, false, false), dt);
-    assert!((p.position.z + WALK_SPEED * dt).abs() < 1e-4);
+    // 初期向きは前方-Z。加速後の定常速度は歩行速度。
+    for _ in 0..120 {
+        p.move_with_input(input(false, false, true, false, false, false), dt);
+    }
+    assert!((p.velocity.length() - WALK_SPEED).abs() < 1e-3);
     assert!((p.position.x).abs() < 1e-6);
     // W+D は斜め移動。x方向と-z方向の速度の大きさは歩行速度。
     let mut p = Player::new();
-    p.move_with_input(input(false, true, true, false, false, false), dt);
-    let moved = glam::Vec2::new(p.position.x, p.position.z);
-    assert!((moved.length() - WALK_SPEED * dt).abs() < 1e-4);
-    assert!((moved.x / moved.y.abs()).abs() - 1.0 < 1e-4);
+    for _ in 0..120 {
+        p.move_with_input(input(false, true, true, false, false, false), dt);
+    }
+    assert!((p.velocity.length() - WALK_SPEED).abs() < 1e-3);
+    assert!((p.velocity.x / p.velocity.z.abs()).abs() - 1.0 < 1e-4);
     // ダッシュ中は速い。
     let mut p = Player::new();
-    p.move_with_input(input(false, false, true, false, true, false), dt);
-    assert!((p.position.z + DASH_SPEED * dt).abs() < 1e-4);
+    for _ in 0..120 {
+        p.move_with_input(input(false, false, true, false, true, false), dt);
+    }
+    assert!((p.velocity.length() - DASH_SPEED).abs() < 1e-3);
     // yaw=90度で前方は+X方向。
     let mut p = Player::new();
     p.yaw = std::f32::consts::FRAC_PI_2;
-    p.move_with_input(input(false, false, true, false, false, false), dt);
-    assert!(p.position.x - WALK_SPEED * dt < 1e-4);
+    for _ in 0..120 {
+        p.move_with_input(input(false, false, true, false, false, false), dt);
+    }
+    assert!(p.velocity.x > WALK_SPEED - 1e-3);
     assert!((p.position.z).abs() < 1e-6);
+}
+
+#[test]
+fn horizontal_movement_starts_and_stops_at_full_speed_immediately() {
+    let dt = 1.0 / 60.0;
+    let mut player = Player::new();
+    player.move_with_input(input(false, false, true, false, false, false), dt);
+    assert!((player.velocity.length() - WALK_SPEED).abs() < 1e-3);
+
+    player.move_with_input(input(false, false, false, false, false, false), dt);
+    assert_eq!(player.velocity.x, 0.0);
+    assert_eq!(player.velocity.z, 0.0);
+}
+
+#[test]
+fn dash_speed_and_visuals_transition_continuously() {
+    let mut player = Player::new();
+    let dt = 1.0 / 60.0;
+    player.move_with_input(input(false, false, true, false, true, false), dt);
+    assert!(player.dash_progress() > 0.0 && player.dash_progress() < 1.0);
+    assert!((player.velocity.length() - DASH_SPEED).abs() < 1e-3);
+    assert!(player.dash_weapon_offset() < 0.0);
+
+    for _ in 0..120 {
+        player.move_with_input(input(false, false, true, false, true, false), dt);
+    }
+    assert!((player.velocity.length() - DASH_SPEED).abs() < 1e-3);
+
+    player.move_with_input(input(false, false, false, false, false, false), dt);
+    assert!(player.dash_progress() < 1.0);
 }
 
 #[test]

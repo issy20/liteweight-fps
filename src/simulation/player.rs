@@ -7,6 +7,8 @@ pub const PLAYER_HEIGHT: f32 = 1.8;
 pub const PLAYER_RADIUS: f32 = 0.3;
 pub const WALK_SPEED: f32 = 4.0;
 pub const DASH_SPEED: f32 = 6.5;
+pub const DASH_TRANSITION_SECONDS: f32 = 0.18;
+pub const DASH_WEAPON_DROP: f32 = 0.055;
 pub const JUMP_VELOCITY: f32 = 4.2;
 pub const GRAVITY: f32 = 9.8;
 /// 衝突判定の丸め誤差許容。接触距離の拡大ではなく、f32精度の境界での誤接触を防ぐ。
@@ -39,6 +41,7 @@ pub struct Player {
     pub pitch: f32,
     pub velocity: Vec3,
     pub on_ground: bool,
+    pub dash_progress: f32,
 }
 impl Default for Player {
     fn default() -> Self {
@@ -48,6 +51,7 @@ impl Default for Player {
             pitch: 0.,
             velocity: Vec3::ZERO,
             on_ground: true,
+            dash_progress: 0.0,
         }
     }
 }
@@ -76,6 +80,14 @@ impl Player {
     pub fn apply_recoil(&mut self, pitch_kick: f32) {
         self.pitch = (self.pitch + pitch_kick).clamp(-1.55, 1.55);
     }
+    pub fn dash_progress(&self) -> f32 {
+        self.dash_progress
+    }
+    pub fn dash_weapon_offset(&self) -> f32 {
+        let progress = self.dash_progress.clamp(0.0, 1.0);
+        let eased = progress * progress * (3.0 - 2.0 * progress);
+        -eased * DASH_WEAPON_DROP
+    }
     /// 視点位置とyaw/pitchから投影×ビュー行列を生成する。
     pub fn view_matrix(&self, aspect: f32) -> Mat4 {
         self.view_matrix_with(aspect, 70.)
@@ -96,9 +108,7 @@ impl Player {
     }
     /// 入力から水平速度を決めて位置を進める。前方はyawの向き、斜め移動は正規化する。
     pub fn move_with_input(&mut self, input: Input, dt: f32) {
-        let horizontal = self.horizontal(input);
-        self.velocity.x = horizontal.x;
-        self.velocity.z = horizontal.z;
+        self.update_horizontal(input, dt);
         if input.jump && self.on_ground {
             self.velocity.y = JUMP_VELOCITY;
             self.on_ground = false;
@@ -113,7 +123,13 @@ impl Player {
             self.on_ground = true;
         }
     }
-    fn horizontal(&self, input: Input) -> Vec3 {
+    fn update_horizontal(&mut self, input: Input, dt: f32) -> Vec3 {
+        let dash_step = (dt.max(0.0) / DASH_TRANSITION_SECONDS).min(1.0);
+        self.dash_progress = if input.dash {
+            (self.dash_progress + dash_step).min(1.0)
+        } else {
+            (self.dash_progress - dash_step).max(0.0)
+        };
         let speed = if input.dash { DASH_SPEED } else { WALK_SPEED };
         let mut input_dir = Vec3::ZERO;
         if input.forward {
@@ -136,11 +152,14 @@ impl Player {
         let forward = Vec3::new(self.yaw.sin(), 0., -self.yaw.cos());
         let right_vec = Vec3::new(self.yaw.cos(), 0., self.yaw.sin());
         let move_dir = forward * -input_dir.z + right_vec * input_dir.x;
-        Vec3::new(move_dir.x * speed, 0., move_dir.z * speed)
+        let target = Vec3::new(move_dir.x * speed, 0., move_dir.z * speed);
+        self.velocity.x = target.x;
+        self.velocity.z = target.z;
+        target
     }
     /// 入力とAABB衝突を考慮して移動する。水平方向は軸ごとにスライディングする。
     pub fn move_with_collision(&mut self, colliders: &[Aabb], input: Input, dt: f32) {
-        let horizontal = self.horizontal(input);
+        let horizontal = self.update_horizontal(input, dt);
         if input.jump && self.on_ground {
             self.velocity.y = JUMP_VELOCITY;
             self.on_ground = false;
@@ -151,7 +170,6 @@ impl Player {
         // 水平は軸ごとに移動して衝突を解決し、残った方向へ滑る。
         for axis in [0, 2] {
             self.position[axis] += horizontal[axis] * dt;
-            self.velocity[axis] = horizontal[axis];
             if Self::collides(colliders, self.body_center()) {
                 self.position[axis] -= horizontal[axis] * dt;
                 self.velocity[axis] = 0.;

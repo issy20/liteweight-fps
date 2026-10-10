@@ -28,15 +28,17 @@ movement, aiming, and weapon handling.
   a free location at least 8 m from the player.
 - Session stats include hits, headshots, and kills. Challenge results include
   overall and per-weapon breakdowns; the latest 50 results are saved locally.
-- Settings for mouse and ADS sensitivity, FOV, Free Training infinite ammo,
-  audio volume, and BOT count, behavior, health, speed, and respawn interval.
+- Settings for mouse and ADS sensitivity, FOV, vertical inversion, remappable
+  gameplay keys, window resolution, internal resolution scale, fullscreen, VSync,
+  FPS limit, Free Training infinite ammo, audio volume, and BOT parameters.
 - Slim, faceless mannequin BOTs with rounded low-poly body parts and an orange
   forehead marker.
 - A HUD with ammo, reticle, and hit markers (white for body hits, yellow for
   headshots, and red for kills), along with hit reactions, muzzle flashes,
   impact effects, simple weapon models, and synthesized sound effects.
-- A fixed 1280×720 internal render resolution, resizable window, and fullscreen
-  toggle in Settings.
+- A resizable window and fullscreen toggle. The product renderer adjusts its
+  internal render-target aspect and camera projection to the display, avoiding
+  black bars without distorting or cropping the scene.
 
 The sniper scope moves into alignment progressively. During ADS, the scope
 opening grows and the area outside it darkens smoothly. Weapon switching has a
@@ -56,21 +58,22 @@ cargo run --release
 | --- | --- |
 | Up / Down, Enter | Navigate and select menu items |
 | Mouse movement | Look around; relative input is used while captured |
-| W / A / S / D | Move forward / left / backward / right |
-| Shift | Sprint while held |
-| Space | Jump |
+| W / A / S / D | Move forward / left / backward / right (rebindable) |
+| Left Shift | Sprint while held (rebindable) |
+| Space | Jump (rebindable) |
 | Left mouse button | Fire; hold for automatic fire with the assault rifle |
 | Right mouse button | Aim down sights while held |
-| 1 / 2 / 3 | Select pistol / assault rifle / sniper rifle |
-| R | Reload; reload takes priority over firing and is ignored when full |
-| Esc | Pause and release the mouse; go back or resume in menus |
+| 1 / 2 / 3 | Select pistol / assault rifle / sniper rifle (rebindable) |
+| R | Reload; reload takes priority over firing and is ignored when full (rebindable) |
+| Esc | Pause and release the mouse; go back or resume in menus (rebindable) |
 | Left / Right, Enter | Adjust the selected setting / confirm a menu item |
 | Q / window close button | Quit |
 
 You can resize the window by dragging its edges. Rendering pauses while the
 window is minimized, hidden, or has zero size, and resumes when it becomes
-visible again. Ordinary window resizing does not recreate the internal render
-texture.
+visible again. Resizing the window updates the internal render-target dimensions
+to match the display aspect without letterboxing. The internal resolution scale
+controls pixel density while preserving that aspect ratio.
 
 ## Build and test
 
