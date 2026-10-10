@@ -50,11 +50,9 @@ fn ads_interpolates_allows_fire_and_yields_to_reload() {
 }
 
 #[test]
-fn weapon_visual_recoil_returns_while_view_recoil_stays_and_ads_reduces_spread() {
+fn weapon_visual_recoil_returns_while_view_recoil_stays() {
     let mut w = Weapon::default();
     let mut player = liteweight_fps::simulation::Player::new();
-    let hip = w.spread(false);
-    assert!(w.spread(true) > hip);
     w.fire();
     assert!(w.visual_recoil > 0.0);
     player.apply_recoil(w.data.recoil_kick);
@@ -64,7 +62,6 @@ fn weapon_visual_recoil_returns_while_view_recoil_stays_and_ads_reduces_spread()
     w.advance(2.0, true);
     assert_eq!(player.pitch, pitch_after_shot);
     assert_eq!(w.visual_recoil, 0.0);
-    assert!(w.spread(false) < hip);
 }
 
 #[test]

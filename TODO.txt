@@ -1,3 +1,2 @@
-[idea] tracking aimがより楽しめるような仕様にする
 [feedback] 銃のモデリングを刷新する
 [feedback] マズルフラッシュを洗練させる

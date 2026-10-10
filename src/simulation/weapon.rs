@@ -44,8 +44,6 @@ pub struct WeaponData {
     pub damage: u32,
     pub ads_in_seconds: f32,
     pub ads_out_seconds: f32,
-    pub hip_spread: f32,
-    pub ads_spread: f32,
     pub recoil_kick: f32,
     pub mode: FireMode,
     pub bolt_seconds: f32,
@@ -57,8 +55,6 @@ pub const AR: WeaponData = WeaponData {
     damage: 25,
     ads_in_seconds: 0.18,
     ads_out_seconds: 0.18,
-    hip_spread: 0.018,
-    ads_spread: 0.001,
     recoil_kick: 0.010,
     mode: FireMode::Automatic,
     bolt_seconds: 0.0,
@@ -70,8 +66,6 @@ pub const PISTOL: WeaponData = WeaponData {
     damage: 50,
     ads_in_seconds: 0.16,
     ads_out_seconds: 0.16,
-    hip_spread: 0.035,
-    ads_spread: 0.004,
     recoil_kick: 0.045,
     mode: FireMode::SemiAutomatic,
     bolt_seconds: 0.0,
@@ -87,8 +81,6 @@ pub const SNIPER: WeaponData = WeaponData {
     damage: 100,
     ads_in_seconds: SNIPER_ADS_IN_SECONDS,
     ads_out_seconds: SNIPER_ADS_OUT_SECONDS,
-    hip_spread: 0.0,
-    ads_spread: 0.0,
     recoil_kick: 0.075,
     mode: FireMode::BoltAction,
     bolt_seconds: 1.2,
@@ -158,11 +150,6 @@ impl Weapon {
             }
         }
     }
-    pub fn spread(&self, moving: bool) -> f32 {
-        let spread = self.data.hip_spread
-            + (self.data.ads_spread - self.data.hip_spread) * self.ads_progress;
-        spread * if moving { 2.5 } else { 1.0 }
-    }
     /// スナイパーは弾のランダム拡散を使わず、腰撃ち時の照準ずれをADSで収束させる。
     pub fn shot_direction(&self, view_direction: Vec3) -> Vec3 {
         let view = view_direction.normalize_or_zero();
@@ -174,19 +161,6 @@ impl Weapon {
             (1.0 - self.ads_progress.clamp(0.0, 1.0)).powf(SNIPER_ALIGNMENT_REMAINING_EXPONENT);
         (view + right * (SNIPER_HIP_ALIGNMENT_RADIANS.tan() * remaining_misalignment))
             .normalize_or_zero()
-    }
-    /// Reproducible per-shot hip-fire deviation; the sniper keeps its dedicated alignment rule.
-    pub fn spread_direction(&self, view_direction: Vec3, moving: bool, shot_index: u32) -> Vec3 {
-        let forward = self.shot_direction(view_direction);
-        if self.kind == WeaponKind::Sniper {
-            return forward;
-        }
-        let sample = shot_index.wrapping_mul(1664525).wrapping_add(1013904223);
-        let angle = (sample & 65535) as f32 / 65536.0 * std::f32::consts::TAU;
-        let radius = ((sample >> 16) as f32 / 65536.0).sqrt() * self.spread(moving);
-        let right = forward.cross(Vec3::Y).normalize_or_zero();
-        let up = right.cross(forward);
-        (forward + (right * angle.cos() + up * angle.sin()) * radius).normalize_or_zero()
     }
     pub fn view_model_layout(&self, weapon_y_offset: f32) -> WeaponViewModelLayout {
         let progress = self.ads_progress.clamp(0.0, 1.0);

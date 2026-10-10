@@ -10,11 +10,15 @@ const BOT_STRAFE_SPEED: f32 = 2.2;
 const BOT_CHASE_SPEED: f32 = 1.8;
 const BOT_CHASE_STOP_DISTANCE: f32 = 4.5;
 const BOT_STRAFE_ANGULAR_SPEED: f32 = 0.9;
+const TRACKING_STRAFE_MIN_STEPS: u16 = 45;
+const TRACKING_STRAFE_MAX_STEPS: u16 = 120;
+const TRACKING_STRAFE_HALF_WIDTH: f32 = 5.0;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BotBehavior {
     Static,
     Strafe,
+    TrackingStrafe,
     Chase,
 }
 
@@ -60,6 +64,10 @@ pub struct Bot {
     spawn_slot: usize,
     ai_accumulator: f32,
     strafe_phase: f32,
+    tracking_origin_x: f32,
+    tracking_direction: f32,
+    tracking_steps_remaining: u16,
+    tracking_rng: u32,
     chase_waypoint: usize,
     move_direction: Vec3,
     pub arena_scale: f32,
@@ -76,6 +84,20 @@ impl Bot {
         } else {
             std::f32::consts::PI
         };
+        let mut tracking_rng = (spawn_slot as u32)
+            .wrapping_add(1)
+            .wrapping_mul(0x9E37_79B9)
+            .max(1);
+        let tracking_steps_remaining = if behavior == BotBehavior::TrackingStrafe {
+            random_tracking_stride(&mut tracking_rng)
+        } else {
+            0
+        };
+        let tracking_direction = if spawn_slot.is_multiple_of(2) {
+            1.0
+        } else {
+            -1.0
+        };
         Self {
             position,
             hp: 100,
@@ -88,11 +110,15 @@ impl Bot {
             spawn_slot,
             ai_accumulator: 0.0,
             strafe_phase,
+            tracking_origin_x: position.x,
+            tracking_direction,
+            tracking_steps_remaining,
+            tracking_rng,
             chase_waypoint: 0,
-            move_direction: if behavior == BotBehavior::Strafe {
-                Vec3::X * (BOT_STRAFE_SPEED * strafe_phase.cos())
-            } else {
-                Vec3::ZERO
+            move_direction: match behavior {
+                BotBehavior::Strafe => Vec3::X * (BOT_STRAFE_SPEED * strafe_phase.cos()),
+                BotBehavior::TrackingStrafe => Vec3::X * (BOT_STRAFE_SPEED * tracking_direction),
+                BotBehavior::Static | BotBehavior::Chase => Vec3::ZERO,
             },
             arena_scale: 1.0,
         }
@@ -220,10 +246,32 @@ impl Bot {
                 .rem_euclid(std::f32::consts::TAU);
             self.move_direction = Vec3::X * (BOT_STRAFE_SPEED * self.strafe_phase.cos());
         }
+        if self.behavior == BotBehavior::TrackingStrafe {
+            if self.tracking_steps_remaining == 0 {
+                self.tracking_direction = -self.tracking_direction;
+                self.tracking_steps_remaining = random_tracking_stride(&mut self.tracking_rng);
+            }
+            self.tracking_steps_remaining -= 1;
+            let next_x = self.position.x
+                + BOT_STRAFE_SPEED * self.tracking_direction * dt * self.speed_multiplier;
+            let min_x = self.tracking_origin_x - TRACKING_STRAFE_HALF_WIDTH;
+            let max_x = self.tracking_origin_x + TRACKING_STRAFE_HALF_WIDTH;
+            if next_x < min_x || next_x > max_x {
+                self.tracking_direction = -self.tracking_direction;
+                self.tracking_steps_remaining = random_tracking_stride(&mut self.tracking_rng);
+            }
+            self.move_direction = Vec3::X * (BOT_STRAFE_SPEED * self.tracking_direction);
+        }
         let displacement = self.move_direction * (dt * self.speed_multiplier);
         for axis in [0, 2] {
             let mut candidate = self.position;
             candidate[axis] += displacement[axis];
+            if self.behavior == BotBehavior::TrackingStrafe && axis == 0 {
+                candidate.x = candidate.x.clamp(
+                    self.tracking_origin_x - TRACKING_STRAFE_HALF_WIDTH,
+                    self.tracking_origin_x + TRACKING_STRAFE_HALF_WIDTH,
+                );
+            }
             if !self.collides(candidate, index, walls, other_positions) {
                 self.position = candidate;
             }
@@ -234,6 +282,7 @@ impl Bot {
         match self.behavior {
             BotBehavior::Static => self.move_direction = Vec3::ZERO,
             BotBehavior::Strafe => {}
+            BotBehavior::TrackingStrafe => {}
             BotBehavior::Chase => {
                 let mut target = self.next_waypoint();
                 if let Some(waypoint) = target {
@@ -316,9 +365,19 @@ impl Bot {
         } else {
             std::f32::consts::PI
         };
+        self.tracking_origin_x = position.x;
+        self.tracking_steps_remaining = random_tracking_stride(&mut self.tracking_rng);
         self.chase_waypoint = 0;
         self.move_direction = Vec3::ZERO;
     }
+}
+
+fn random_tracking_stride(state: &mut u32) -> u16 {
+    *state ^= *state << 13;
+    *state ^= *state >> 17;
+    *state ^= *state << 5;
+    TRACKING_STRAFE_MIN_STEPS
+        + (*state as u16 % (TRACKING_STRAFE_MAX_STEPS - TRACKING_STRAFE_MIN_STEPS + 1))
 }
 
 const TORSO_PROFILE: [(f32, f32, f32); 6] = [
@@ -533,4 +592,35 @@ pub fn line_of_sight_blocked(origin: Vec3, target: Vec3, walls: &[Aabb]) -> bool
 
 pub fn player_eye_position(position: Vec3) -> Vec3 {
     Vec3::new(position.x, EYE_HEIGHT, position.z)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn tracking_strafe_uses_random_step_counts_within_configured_bounds() {
+        let mut rng = 0x9E37_79B9;
+        let observed: Vec<_> = (0..8).map(|_| random_tracking_stride(&mut rng)).collect();
+        assert!(observed
+            .iter()
+            .all(|steps| (TRACKING_STRAFE_MIN_STEPS..=TRACKING_STRAFE_MAX_STEPS).contains(steps)));
+        assert!(observed.windows(2).any(|pair| pair[0] != pair[1]));
+    }
+
+    #[test]
+    fn tracking_strafe_reverses_after_countdown_and_stays_in_lane() {
+        let mut bot = Bot::with_behavior(Vec3::ZERO, BotBehavior::TrackingStrafe, 0);
+        let initial_direction = bot.tracking_direction;
+        let initial_steps = bot.tracking_steps_remaining;
+        for _ in 0..=initial_steps {
+            bot.advance_motion(0, 1.0 / 60.0, Vec3::ZERO, &[], &[]);
+        }
+        assert_ne!(bot.tracking_direction, initial_direction);
+
+        for _ in 0..60 * 120 {
+            bot.advance_motion(0, 1.0 / 60.0, Vec3::ZERO, &[], &[]);
+            assert!(bot.position.x.abs() <= TRACKING_STRAFE_HALF_WIDTH + 1e-4);
+        }
+    }
 }

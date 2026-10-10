@@ -470,7 +470,7 @@ fn muzzle_parallax_cannot_damage_a_bot_outside_the_reticle_ray() {
 }
 
 #[test]
-fn shot_spread_cannot_select_a_bot_that_the_reticle_misses() {
+fn shot_direction_cannot_select_a_bot_that_the_reticle_misses() {
     let mut combat = Combat::new(vec![Bot::new(Vec3::new(0.5, 0.0, -5.0))]);
     let shot = combat.shoot_from_muzzle_with_aim(
         Vec3::new(0.0, 1.4, 0.0),
@@ -483,7 +483,7 @@ fn shot_spread_cannot_select_a_bot_that_the_reticle_misses() {
 
     assert!(
         !shot.hit && !shot.impact,
-        "spread may miss an aimed BOT but cannot choose another"
+        "the shot must not hit a BOT outside the reticle direction"
     );
     assert_eq!(combat.targets[0].hp, 100);
 }

@@ -9,11 +9,12 @@ pub const CHALLENGE_SECONDS: f32 = 5.0 * 60.0;
 pub enum SessionMode {
     FreeTraining,
     FiveMinuteChallenge,
+    TrackingAim,
 }
 
 impl SessionMode {
     pub fn infinite_ammo_enabled(self, setting_enabled: bool) -> bool {
-        self == Self::FreeTraining && setting_enabled
+        self == Self::TrackingAim || (self == Self::FreeTraining && setting_enabled)
     }
 }
 
@@ -93,6 +94,7 @@ impl TrainingSession {
             remaining_seconds: match mode {
                 SessionMode::FreeTraining => None,
                 SessionMode::FiveMinuteChallenge => Some(CHALLENGE_SECONDS),
+                SessionMode::TrackingAim => None,
             },
             complete: false,
             stats: MatchStats::default(),

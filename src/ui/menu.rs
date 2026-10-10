@@ -10,6 +10,7 @@ pub enum PauseMenuAction {
 pub enum TitleMenuAction {
     FreeTraining,
     FiveMinuteChallenge,
+    TrackingAim,
     Settings,
     Quit,
 }
@@ -20,7 +21,7 @@ pub struct TitleSelection {
 }
 
 impl TitleSelection {
-    const ITEM_COUNT: usize = 4;
+    const ITEM_COUNT: usize = 5;
 
     pub fn selected_index(self) -> usize {
         self.selected
@@ -38,7 +39,8 @@ impl TitleSelection {
         match self.selected {
             0 => TitleMenuAction::FreeTraining,
             1 => TitleMenuAction::FiveMinuteChallenge,
-            2 => TitleMenuAction::Settings,
+            2 => TitleMenuAction::TrackingAim,
+            3 => TitleMenuAction::Settings,
             _ => TitleMenuAction::Quit,
         }
     }

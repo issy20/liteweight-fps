@@ -563,6 +563,11 @@ fn infinite_ammo_setting_is_ignored_during_the_five_minute_challenge() {
     assert!(SessionMode::FreeTraining.infinite_ammo_enabled(true));
     assert!(!SessionMode::FreeTraining.infinite_ammo_enabled(false));
     assert!(!SessionMode::FiveMinuteChallenge.infinite_ammo_enabled(true));
+    assert!(SessionMode::TrackingAim.infinite_ammo_enabled(false));
+    let mut tracking = TrainingSession::new(SessionMode::TrackingAim);
+    assert_eq!(tracking.remaining_seconds(), None);
+    assert!(!tracking.advance(10_000.0));
+    assert!(!tracking.is_complete());
 }
 
 #[test]
@@ -572,11 +577,39 @@ fn title_menu_selects_both_training_modes_settings_and_quit() {
     menu.move_down();
     assert_eq!(menu.activate(), TitleMenuAction::FiveMinuteChallenge);
     menu.move_down();
+    assert_eq!(menu.activate(), TitleMenuAction::TrackingAim);
+    menu.move_down();
     assert_eq!(menu.activate(), TitleMenuAction::Settings);
     menu.move_down();
     assert_eq!(menu.activate(), TitleMenuAction::Quit);
     menu.move_down();
     assert_eq!(menu.activate(), TitleMenuAction::FreeTraining);
+}
+
+#[test]
+fn tracking_mode_world_and_target_have_no_cover_obstacles() {
+    let scene = liteweight_fps::world::tracking_range();
+    assert_eq!(scene.vertices.len(), 24);
+    assert!(scene
+        .vertices
+        .iter()
+        .all(|vertex| vertex.position[1] <= 0.0));
+    assert_eq!(liteweight_fps::world::tracking_colliders().len(), 1);
+
+    let mut combat = liteweight_fps::simulation::combat::Combat::default();
+    combat.configure_tracking_target(100, 1.0, 2.0);
+    assert_eq!(combat.targets.len(), 1);
+    assert_eq!(
+        combat.targets[0].behavior,
+        liteweight_fps::simulation::bot::BotBehavior::TrackingStrafe
+    );
+    let start = combat.targets[0].position;
+    combat.advance(
+        1.0,
+        glam::Vec3::ZERO,
+        &liteweight_fps::world::tracking_colliders(),
+    );
+    assert_ne!(combat.targets[0].position, start);
 }
 
 #[test]

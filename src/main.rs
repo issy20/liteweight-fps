@@ -154,7 +154,6 @@ impl App {
     fn fire(&mut self, held: bool, pressed: bool) {
         let kind = self.weapons.active_kind();
         let view_direction = self.player.aim_direction();
-        let moving = self.player.velocity.length_squared() > 0.01;
         let damage = self.weapons.active().data.damage;
         let recoil_kick = self.weapons.active().data.recoil_kick;
         if !self
@@ -163,10 +162,7 @@ impl App {
         {
             return;
         }
-        let shot_direction =
-            self.weapons
-                .active()
-                .spread_direction(view_direction, moving, self.combat.shots);
+        let shot_direction = self.weapons.active().shot_direction(view_direction);
         let (aspect, weapon_y_offset) = self
             .renderer
             .as_ref()
@@ -283,15 +279,35 @@ impl App {
         self.weapons = Loadout::default();
         self.fire_input = FireInput::default();
         self.combat = Combat::default();
-        let arena_scale = world::arena_scale_for_bot_count(self.settings.bot_count);
-        self.combat.configure_bots_with_arena_scale(
-            self.settings.bot_count,
-            self.settings.bot_behavior,
-            self.settings.bot_hp,
-            self.settings.bot_speed,
-            self.settings.bot_respawn_seconds,
-            arena_scale,
-        );
+        if mode == SessionMode::TrackingAim {
+            self.combat.configure_tracking_target(
+                self.settings.bot_hp,
+                self.settings.bot_speed,
+                self.settings.bot_respawn_seconds,
+            );
+            self.colliders = world::tracking_colliders();
+            if let Some(renderer) = &mut self.renderer {
+                if let Err(error) = renderer.update_scene(&world::tracking_range()) {
+                    self.error = Some(error);
+                }
+            }
+        } else {
+            let arena_scale = world::arena_scale_for_bot_count(self.settings.bot_count);
+            self.combat.configure_bots_with_arena_scale(
+                self.settings.bot_count,
+                self.settings.bot_behavior,
+                self.settings.bot_hp,
+                self.settings.bot_speed,
+                self.settings.bot_respawn_seconds,
+                arena_scale,
+            );
+            self.colliders = world::arena_colliders_scaled(arena_scale);
+            if let Some(renderer) = &mut self.renderer {
+                if let Err(error) = renderer.update_scene(&world::arena_scaled(arena_scale)) {
+                    self.error = Some(error);
+                }
+            }
+        }
         self.session = TrainingSession::new(mode);
         self.title_screen = false;
         self.settings_menu = false;
@@ -309,19 +325,34 @@ impl App {
     fn apply_runtime_setting(&mut self, setting: usize) {
         match setting {
             3 | 4 | 6 | 7 | 8 => {
-                let arena_scale = world::arena_scale_for_bot_count(self.settings.bot_count);
-                self.combat.configure_bots_with_arena_scale(
-                    self.settings.bot_count,
-                    self.settings.bot_behavior,
-                    self.settings.bot_hp,
-                    self.settings.bot_speed,
-                    self.settings.bot_respawn_seconds,
-                    arena_scale,
-                );
-                self.colliders = world::arena_colliders_scaled(arena_scale);
-                if let Some(renderer) = &mut self.renderer {
-                    if let Err(error) = renderer.update_scene(&world::arena_scaled(arena_scale)) {
-                        self.error = Some(error);
+                if self.session.mode() == SessionMode::TrackingAim {
+                    self.combat.configure_tracking_target(
+                        self.settings.bot_hp,
+                        self.settings.bot_speed,
+                        self.settings.bot_respawn_seconds,
+                    );
+                    self.colliders = world::tracking_colliders();
+                    if let Some(renderer) = &mut self.renderer {
+                        if let Err(error) = renderer.update_scene(&world::tracking_range()) {
+                            self.error = Some(error);
+                        }
+                    }
+                } else {
+                    let arena_scale = world::arena_scale_for_bot_count(self.settings.bot_count);
+                    self.combat.configure_bots_with_arena_scale(
+                        self.settings.bot_count,
+                        self.settings.bot_behavior,
+                        self.settings.bot_hp,
+                        self.settings.bot_speed,
+                        self.settings.bot_respawn_seconds,
+                        arena_scale,
+                    );
+                    self.colliders = world::arena_colliders_scaled(arena_scale);
+                    if let Some(renderer) = &mut self.renderer {
+                        if let Err(error) = renderer.update_scene(&world::arena_scaled(arena_scale))
+                        {
+                            self.error = Some(error);
+                        }
                     }
                 }
             }
@@ -631,6 +662,9 @@ impl ApplicationHandler for App {
                                 }
                                 TitleMenuAction::FiveMinuteChallenge => {
                                     self.begin_session(SessionMode::FiveMinuteChallenge)
+                                }
+                                TitleMenuAction::TrackingAim => {
+                                    self.begin_session(SessionMode::TrackingAim)
                                 }
                                 TitleMenuAction::Settings => {
                                     self.title_screen = false;

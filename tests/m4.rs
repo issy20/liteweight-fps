@@ -468,21 +468,21 @@ fn sniper_ads_fov_change_does_not_move_or_pitch_the_player_camera() {
 }
 
 #[test]
-fn hip_fire_has_reproducible_shot_to_shot_spread_while_sniper_stays_deterministic() {
+fn hip_fire_direction_has_no_random_shot_to_shot_spread() {
     let mut loadout = Loadout::default();
     let view = -Vec3::Z;
     let ar = loadout.active();
-    let first = ar.spread_direction(view, false, 0);
-    let second = ar.spread_direction(view, false, 1);
-    assert_ne!(first, second);
-    assert_eq!(first, ar.spread_direction(view, false, 0));
+    assert_eq!(ar.shot_direction(view), view);
 
     loadout.switch(WeaponKind::Sniper);
     let sniper = loadout.active();
-    assert_eq!(
-        sniper.spread_direction(view, false, 0),
-        sniper.spread_direction(view, false, 1)
-    );
+    let sniper_direction = sniper.shot_direction(view);
+    assert_eq!(sniper_direction, sniper.shot_direction(view));
+    assert_ne!(sniper_direction, view);
+
+    loadout.switch(WeaponKind::Pistol);
+    let pistol = loadout.active();
+    assert_eq!(pistol.shot_direction(view), view);
 }
 
 #[test]
@@ -529,14 +529,12 @@ fn switching_cancels_reload_but_keeps_loaded_ammo_and_clears_ads() {
 }
 
 #[test]
-fn sniper_ads_progress_moves_in_and_out_smoothly_without_spread_accuracy_curve() {
+fn sniper_ads_progress_moves_in_and_out_smoothly() {
     let mut loadout = Loadout::default();
     loadout.switch(WeaponKind::Sniper);
     loadout.advance(0.32, false);
-    let hip = loadout.active().spread(false);
     loadout.advance(0.25, true);
     assert!((loadout.active().ads_progress - 0.5).abs() < 1e-5);
-    assert_eq!(loadout.active().spread(false), hip);
     loadout.advance(0.1, false);
     assert!(loadout.active().ads_progress < 0.5);
     loadout.advance(1.0, false);

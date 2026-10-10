@@ -48,6 +48,28 @@ pub fn arena() -> Scene {
     arena_scaled(1.0)
 }
 
+/// A large unobstructed floor for continuous moving-target practice.
+pub fn tracking_range() -> Scene {
+    let mut scene = Scene {
+        vertices: Vec::with_capacity(24),
+        indices: Vec::with_capacity(36),
+    };
+    scene.cube(
+        Vec3::new(0.0, -0.25, 0.0),
+        Vec3::new(1000.0, 0.5, 1000.0),
+        [0.35, 0.4, 0.45],
+    );
+    scene
+}
+
+/// The floor is the only collider; there are no walls or cover objects.
+pub fn tracking_colliders() -> Vec<Aabb> {
+    vec![Aabb::new(
+        Vec3::new(-500.0, -0.5, -500.0),
+        Vec3::new(500.0, 0.0, 500.0),
+    )]
+}
+
 /// BOT数1〜20に合わせて、50m角を34m〜110mへ水平スケールする。
 pub fn arena_scale_for_bot_count(count: u32) -> f32 {
     0.68 + (count.clamp(1, 20) - 1) as f32 * 0.08

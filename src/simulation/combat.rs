@@ -176,6 +176,28 @@ impl Combat {
             .collect();
     }
 
+    pub fn configure_tracking_target(
+        &mut self,
+        hp: u32,
+        speed_multiplier: f32,
+        respawn_seconds: f32,
+    ) {
+        self.arena_scale = 1.0;
+        let mut target =
+            Bot::with_behavior(Vec3::new(0.0, 0.0, -12.0), BotBehavior::TrackingStrafe, 1);
+        target.hp = hp.clamp(50, 200);
+        target.speed_multiplier = speed_multiplier.clamp(0.5, 2.0);
+        target.respawn_seconds = respawn_seconds.clamp(0.5, 10.0);
+        self.targets = vec![target];
+        self.last_shot = Shot::default();
+        self.feedback = 0.0;
+        self.shots = 0;
+        self.hits = 0;
+        self.headshots = 0;
+        self.kills = 0;
+        self.spawn_cursor = 0;
+    }
+
     pub fn advance(&mut self, dt: f32, player_position: Vec3, walls: &[Aabb]) {
         self.feedback = (self.feedback - dt).max(0.0);
         for bot in &mut self.targets {

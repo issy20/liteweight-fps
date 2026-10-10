@@ -5,7 +5,7 @@ use crate::engine::text::{FontAtlas, TextMesh};
 use crate::{
     simulation::{
         combat::Combat,
-        weapon::{Weapon, WeaponKind, AR},
+        weapon::{Weapon, WeaponKind},
     },
     Scene, Vertex,
 };
@@ -1046,9 +1046,15 @@ pub fn title_overlay(mesh: &mut Scene, selected: usize, aspect: f32) {
         [0.95, 0.53, 0.19],
         aspect,
     );
-    for (index, (bottom, height)) in [(0.12, 0.19), (-0.13, 0.19), (-0.38, 0.19), (-0.63, 0.19)]
-        .into_iter()
-        .enumerate()
+    for (index, (bottom, height)) in [
+        (0.14, 0.19),
+        (-0.11, 0.19),
+        (-0.30, 0.19),
+        (-0.49, 0.19),
+        (-0.68, 0.19),
+    ]
+    .into_iter()
+    .enumerate()
     {
         let is_selected = index == selected;
         rect_alpha(
@@ -1122,8 +1128,9 @@ pub fn title_text_into(mesh: &mut TextMesh, selected: usize, viewport: [u32; 2])
     for (index, (label, y)) in [
         ("FREE TRAINING", 0.235),
         ("5-MINUTE CHALLENGE", -0.015),
-        ("SETTINGS", -0.265),
-        ("QUIT GAME", -0.515),
+        ("TRACKING AIM", -0.205),
+        ("SETTINGS", -0.395),
+        ("QUIT GAME", -0.585),
     ]
     .into_iter()
     .enumerate()
@@ -1272,6 +1279,7 @@ pub fn game_hud_text_into(mesh: &mut TextMesh, info: GameHudInfo, viewport: [u32
             let seconds = info.remaining.unwrap_or(0.0).ceil() as u32;
             format!("TIME  {:02}:{:02}", seconds / 60, seconds % 60)
         }
+        crate::simulation::game_mode::SessionMode::TrackingAim => "TRACKING AIM".to_owned(),
     };
     let ammo_text = if info.infinite_ammo {
         "∞".to_owned()
@@ -1947,12 +1955,7 @@ pub fn hud_mesh_with_menu_and_ammo_into(
         );
     }
     if weapon.ads_progress <= f32::EPSILON {
-        let reticle_spread = if weapon.kind == WeaponKind::Sniper {
-            AR.hip_spread
-        } else {
-            weapon.spread(false)
-        };
-        let gap = 0.008 + reticle_spread * 1.4;
+        let gap = 0.008;
         for sign in [-1., 1.] {
             rect(
                 m,
@@ -2418,7 +2421,7 @@ mod tests {
 
     #[test]
     fn title_menu_highlights_cover_each_larger_menu_label() {
-        for (selected, text_top, text_height) in [(0, 0.235, 0.047), (3, -0.515, 0.047)] {
+        for (selected, text_top, text_height) in [(0, 0.235, 0.047), (4, -0.585, 0.047)] {
             let mut mesh = crate::Scene {
                 vertices: Vec::new(),
                 indices: Vec::new(),
