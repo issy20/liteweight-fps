@@ -191,7 +191,11 @@ impl App {
             &self.colliders,
             damage,
         );
-        self.player.apply_recoil(recoil_kick);
+        if self.session.mode().recoil_enabled() {
+            self.player.apply_recoil(recoil_kick);
+        } else {
+            self.weapons.active_mut().visual_recoil = 0.0;
+        }
         self.session
             .record_shot(kind, shot.hit, shot.headshot, shot.killed);
         if let Some(audio) = &self.audio {
@@ -280,7 +284,8 @@ impl App {
         self.fire_input = FireInput::default();
         self.combat = Combat::default();
         if mode == SessionMode::TrackingAim {
-            self.combat.configure_tracking_target(
+            self.combat.configure_tracking_bots(
+                self.settings.bot_count,
                 self.settings.bot_hp,
                 self.settings.bot_speed,
                 self.settings.bot_respawn_seconds,
@@ -326,7 +331,8 @@ impl App {
         match setting {
             3 | 4 | 6 | 7 | 8 => {
                 if self.session.mode() == SessionMode::TrackingAim {
-                    self.combat.configure_tracking_target(
+                    self.combat.configure_tracking_bots(
+                        self.settings.bot_count,
                         self.settings.bot_hp,
                         self.settings.bot_speed,
                         self.settings.bot_respawn_seconds,

@@ -13,6 +13,10 @@ pub enum SessionMode {
 }
 
 impl SessionMode {
+    pub fn recoil_enabled(self) -> bool {
+        self != Self::TrackingAim
+    }
+
     pub fn infinite_ammo_enabled(self, setting_enabled: bool) -> bool {
         self == Self::TrackingAim || (self == Self::FreeTraining && setting_enabled)
     }

@@ -587,29 +587,68 @@ fn title_menu_selects_both_training_modes_settings_and_quit() {
 }
 
 #[test]
-fn tracking_mode_world_and_target_have_no_cover_obstacles() {
+fn tracking_mode_uses_enclosed_cover_free_range_with_multiple_moving_targets() {
     let scene = liteweight_fps::world::tracking_range();
-    assert_eq!(scene.vertices.len(), 24);
+    assert_eq!(scene.vertices.len(), 120);
+    assert_eq!(
+        scene
+            .vertices
+            .iter()
+            .map(|vertex| vertex.position[1])
+            .fold(f32::MIN, f32::max),
+        8.0
+    );
     assert!(scene
         .vertices
         .iter()
-        .all(|vertex| vertex.position[1] <= 0.0));
-    assert_eq!(liteweight_fps::world::tracking_colliders().len(), 1);
+        .all(|vertex| { vertex.position[0].abs() <= 20.0 && vertex.position[2].abs() <= 12.0 }));
+    assert_eq!(liteweight_fps::world::tracking_colliders().len(), 5);
 
     let mut combat = liteweight_fps::simulation::combat::Combat::default();
-    combat.configure_tracking_target(100, 1.0, 2.0);
-    assert_eq!(combat.targets.len(), 1);
-    assert_eq!(
-        combat.targets[0].behavior,
-        liteweight_fps::simulation::bot::BotBehavior::TrackingStrafe
-    );
-    let start = combat.targets[0].position;
+    combat.configure_tracking_bots(5, 100, 1.0, 2.0);
+    assert_eq!(combat.targets.len(), 5);
+    assert!(combat.targets.iter().all(|bot| {
+        bot.behavior == liteweight_fps::simulation::bot::BotBehavior::TrackingStrafe
+    }));
+    let starts: Vec<_> = combat.targets.iter().map(|bot| bot.position).collect();
     combat.advance(
         1.0,
         glam::Vec3::ZERO,
         &liteweight_fps::world::tracking_colliders(),
     );
-    assert_ne!(combat.targets[0].position, start);
+    assert!(combat
+        .targets
+        .iter()
+        .zip(starts)
+        .all(|(bot, start)| bot.position != start));
+    assert!(combat
+        .targets
+        .iter()
+        .all(|bot| { bot.position.x.abs() < 20.0 && bot.position.z.abs() < 12.0 }));
+
+    combat.configure_tracking_bots(20, 100, 1.0, 2.0);
+    assert_eq!(combat.targets.len(), 20);
+    assert!(combat
+        .targets
+        .iter()
+        .all(|bot| { bot.position.x.abs() < 20.0 && bot.position.z.abs() < 12.0 }));
+    assert!(combat.targets[0].apply_damage(100));
+    combat.advance(
+        2.1,
+        glam::Vec3::ZERO,
+        &liteweight_fps::world::tracking_colliders(),
+    );
+    assert!(combat.targets[0].alive);
+    assert!(combat.targets[0].position.x.abs() < 20.0);
+    assert!(combat.targets[0].position.z.abs() < 12.0);
+}
+
+#[test]
+fn tracking_aim_disables_camera_and_weapon_recoil() {
+    use liteweight_fps::simulation::game_mode::SessionMode;
+
+    assert!(!SessionMode::TrackingAim.recoil_enabled());
+    assert!(SessionMode::FreeTraining.recoil_enabled());
 }
 
 #[test]

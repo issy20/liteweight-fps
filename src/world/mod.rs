@@ -48,26 +48,80 @@ pub fn arena() -> Scene {
     arena_scaled(1.0)
 }
 
-/// A large unobstructed floor for continuous moving-target practice.
+const TRACKING_RANGE_WIDTH: f32 = 40.0;
+const TRACKING_RANGE_DEPTH: f32 = 24.0;
+const TRACKING_RANGE_WALL_HEIGHT: f32 = 8.0;
+const TRACKING_RANGE_WALL_THICKNESS: f32 = 0.5;
+
+/// A compact, enclosed, cover-free range for continuous moving-target practice.
 pub fn tracking_range() -> Scene {
     let mut scene = Scene {
-        vertices: Vec::with_capacity(24),
-        indices: Vec::with_capacity(36),
+        vertices: Vec::with_capacity(120),
+        indices: Vec::with_capacity(180),
     };
     scene.cube(
         Vec3::new(0.0, -0.25, 0.0),
-        Vec3::new(1000.0, 0.5, 1000.0),
+        Vec3::new(TRACKING_RANGE_WIDTH, 0.5, TRACKING_RANGE_DEPTH),
         [0.35, 0.4, 0.45],
     );
+    for sign in [-1.0, 1.0] {
+        scene.cube(
+            Vec3::new(
+                sign * (TRACKING_RANGE_WIDTH - TRACKING_RANGE_WALL_THICKNESS) * 0.5,
+                TRACKING_RANGE_WALL_HEIGHT * 0.5,
+                0.0,
+            ),
+            Vec3::new(
+                TRACKING_RANGE_WALL_THICKNESS,
+                TRACKING_RANGE_WALL_HEIGHT,
+                TRACKING_RANGE_DEPTH,
+            ),
+            [0.5, 0.55, 0.6],
+        );
+        scene.cube(
+            Vec3::new(
+                0.0,
+                TRACKING_RANGE_WALL_HEIGHT * 0.5,
+                sign * (TRACKING_RANGE_DEPTH - TRACKING_RANGE_WALL_THICKNESS) * 0.5,
+            ),
+            Vec3::new(
+                TRACKING_RANGE_WIDTH,
+                TRACKING_RANGE_WALL_HEIGHT,
+                TRACKING_RANGE_WALL_THICKNESS,
+            ),
+            [0.5, 0.55, 0.6],
+        );
+    }
     scene
 }
 
-/// The floor is the only collider; there are no walls or cover objects.
+/// Floor and four perimeter walls; no interior cover objects.
 pub fn tracking_colliders() -> Vec<Aabb> {
-    vec![Aabb::new(
-        Vec3::new(-500.0, -0.5, -500.0),
-        Vec3::new(500.0, 0.0, 500.0),
-    )]
+    let half_width = TRACKING_RANGE_WIDTH * 0.5;
+    let half_depth = TRACKING_RANGE_DEPTH * 0.5;
+    let wall = TRACKING_RANGE_WALL_THICKNESS;
+    vec![
+        Aabb::new(
+            Vec3::new(-half_width, -0.5, -half_depth),
+            Vec3::new(half_width, 0.0, half_depth),
+        ),
+        Aabb::new(
+            Vec3::new(-half_width, 0.0, -half_depth),
+            Vec3::new(-half_width + wall, TRACKING_RANGE_WALL_HEIGHT, half_depth),
+        ),
+        Aabb::new(
+            Vec3::new(half_width - wall, 0.0, -half_depth),
+            Vec3::new(half_width, TRACKING_RANGE_WALL_HEIGHT, half_depth),
+        ),
+        Aabb::new(
+            Vec3::new(-half_width, 0.0, -half_depth),
+            Vec3::new(half_width, TRACKING_RANGE_WALL_HEIGHT, -half_depth + wall),
+        ),
+        Aabb::new(
+            Vec3::new(-half_width, 0.0, half_depth - wall),
+            Vec3::new(half_width, TRACKING_RANGE_WALL_HEIGHT, half_depth),
+        ),
+    ]
 }
 
 /// BOT数1〜20に合わせて、50m角を34m〜110mへ水平スケールする。

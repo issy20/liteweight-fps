@@ -12,7 +12,7 @@ const BOT_CHASE_STOP_DISTANCE: f32 = 4.5;
 const BOT_STRAFE_ANGULAR_SPEED: f32 = 0.9;
 const TRACKING_STRAFE_MIN_STEPS: u16 = 45;
 const TRACKING_STRAFE_MAX_STEPS: u16 = 120;
-const TRACKING_STRAFE_HALF_WIDTH: f32 = 5.0;
+const TRACKING_STRAFE_HALF_WIDTH: f32 = 2.5;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BotBehavior {

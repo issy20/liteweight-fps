@@ -45,6 +45,28 @@ const RESPAWN_POINTS: [Vec3; 36] = [
     Vec3::new(-11.0, 0.0, -22.0),
     Vec3::new(11.0, 0.0, -22.0),
 ];
+const TRACKING_SPAWN_POINTS: [Vec3; 20] = [
+    Vec3::new(-15.0, 0.0, -10.0),
+    Vec3::new(-7.5, 0.0, -10.0),
+    Vec3::new(0.0, 0.0, -10.0),
+    Vec3::new(7.5, 0.0, -10.0),
+    Vec3::new(15.0, 0.0, -10.0),
+    Vec3::new(-15.0, 0.0, -8.0),
+    Vec3::new(-7.5, 0.0, -8.0),
+    Vec3::new(0.0, 0.0, -8.0),
+    Vec3::new(7.5, 0.0, -8.0),
+    Vec3::new(15.0, 0.0, -8.0),
+    Vec3::new(-15.0, 0.0, -6.0),
+    Vec3::new(-7.5, 0.0, -6.0),
+    Vec3::new(0.0, 0.0, -6.0),
+    Vec3::new(7.5, 0.0, -6.0),
+    Vec3::new(15.0, 0.0, -6.0),
+    Vec3::new(-15.0, 0.0, -4.0),
+    Vec3::new(-7.5, 0.0, -4.0),
+    Vec3::new(0.0, 0.0, -4.0),
+    Vec3::new(7.5, 0.0, -4.0),
+    Vec3::new(15.0, 0.0, -4.0),
+];
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Shot {
@@ -176,19 +198,28 @@ impl Combat {
             .collect();
     }
 
-    pub fn configure_tracking_target(
+    pub fn configure_tracking_bots(
         &mut self,
+        count: u32,
         hp: u32,
         speed_multiplier: f32,
         respawn_seconds: f32,
     ) {
+        let tracking_spawn_count = count.clamp(2, TRACKING_SPAWN_POINTS.len() as u32) as usize;
         self.arena_scale = 1.0;
-        let mut target =
-            Bot::with_behavior(Vec3::new(0.0, 0.0, -12.0), BotBehavior::TrackingStrafe, 1);
-        target.hp = hp.clamp(50, 200);
-        target.speed_multiplier = speed_multiplier.clamp(0.5, 2.0);
-        target.respawn_seconds = respawn_seconds.clamp(0.5, 10.0);
-        self.targets = vec![target];
+        self.targets = TRACKING_SPAWN_POINTS
+            .iter()
+            .copied()
+            .take(tracking_spawn_count)
+            .enumerate()
+            .map(|(index, position)| {
+                let mut bot = Bot::with_behavior(position, BotBehavior::TrackingStrafe, index);
+                bot.hp = hp.clamp(50, 200);
+                bot.speed_multiplier = speed_multiplier.clamp(0.5, 2.0);
+                bot.respawn_seconds = respawn_seconds.clamp(0.5, 10.0);
+                bot
+            })
+            .collect();
         self.last_shot = Shot::default();
         self.feedback = 0.0;
         self.shots = 0;
@@ -214,16 +245,29 @@ impl Combat {
             positions[index] = bot.alive.then_some(bot.position);
         }
 
+        let tracking_aim = !self.targets.is_empty()
+            && self
+                .targets
+                .iter()
+                .all(|bot| bot.behavior == BotBehavior::TrackingStrafe);
         for index in 0..self.targets.len() {
             if self.targets[index].alive || self.targets[index].respawn_remaining > 0.0 {
                 continue;
             }
-            if let Some((spawn_index, position)) =
+            let respawn = if tracking_aim {
+                self.choose_tracking_respawn(index, walls, &positions)
+            } else {
                 self.choose_respawn(index, player_position, walls, &positions)
-            {
+            };
+            if let Some((spawn_index, position)) = respawn {
                 self.targets[index].respawn(position);
                 positions[index] = Some(position);
-                self.spawn_cursor = (spawn_index + 1) % RESPAWN_POINTS.len();
+                let points_len = if tracking_aim {
+                    self.targets.len()
+                } else {
+                    RESPAWN_POINTS.len()
+                };
+                self.spawn_cursor = (spawn_index + 1) % points_len;
             }
         }
     }
@@ -255,6 +299,22 @@ impl Combat {
                 (visible, *offset)
             })
             .map(|(index, _, position)| (index, position))
+    }
+
+    fn choose_tracking_respawn(
+        &self,
+        bot_index: usize,
+        walls: &[Aabb],
+        positions: &[Option<Vec3>],
+    ) -> Option<(usize, Vec3)> {
+        (0..self.targets.len())
+            .map(|offset| ((self.spawn_cursor + offset) % self.targets.len(), offset))
+            .find_map(|(index, _)| {
+                let position = TRACKING_SPAWN_POINTS[index];
+                self.targets[bot_index]
+                    .can_spawn_at(position, bot_index, walls, positions)
+                    .then_some((index, position))
+            })
     }
 
     pub fn shoot(&mut self, origin: Vec3, direction: Vec3, walls: &[Aabb], damage: u32) -> Shot {
