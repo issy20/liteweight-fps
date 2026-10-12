@@ -1,4 +1,42 @@
 use glam::{Vec2, Vec3};
+use std::time::{SystemTime, UNIX_EPOCH};
+
+/// Small dependency-free random stream used only for per-shot hip-fire spread.
+pub struct ShotSpreadRng(u32);
+
+impl ShotSpreadRng {
+    pub fn new(seed: u32) -> Self {
+        Self(if seed == 0 { 0xA341_316C } else { seed })
+    }
+
+    pub fn from_entropy() -> Self {
+        let seed = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|duration| duration.subsec_nanos() ^ duration.as_secs() as u32)
+            .unwrap_or(0xA341_316C);
+        Self::new(seed)
+    }
+
+    fn next_f32(&mut self) -> f32 {
+        self.0 ^= self.0 << 13;
+        self.0 ^= self.0 >> 17;
+        self.0 ^= self.0 << 5;
+        self.0 as f32 / u32::MAX as f32
+    }
+
+    pub fn apply(&mut self, direction: Vec3, maximum_angle: f32) -> Vec3 {
+        let forward = direction.normalize_or_zero();
+        if forward == Vec3::ZERO || maximum_angle <= 0.0 {
+            return forward;
+        }
+        let right = forward.cross(Vec3::Y).normalize_or_zero();
+        let right = if right == Vec3::ZERO { Vec3::X } else { right };
+        let up = right.cross(forward).normalize_or_zero();
+        let angle = self.next_f32() * std::f32::consts::TAU;
+        let radius = self.next_f32().sqrt() * maximum_angle.tan();
+        (forward + right * (angle.cos() * radius) + up * (angle.sin() * radius)).normalize_or_zero()
+    }
+}
 
 /// 発射入力方式。
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -47,6 +85,7 @@ pub struct WeaponData {
     pub recoil_kick: f32,
     pub mode: FireMode,
     pub bolt_seconds: f32,
+    pub hip_fire_spread_radians: f32,
 }
 pub const AR: WeaponData = WeaponData {
     magazine: 30,
@@ -58,6 +97,7 @@ pub const AR: WeaponData = WeaponData {
     recoil_kick: 0.010,
     mode: FireMode::Automatic,
     bolt_seconds: 0.0,
+    hip_fire_spread_radians: 0.012,
 };
 pub const PISTOL: WeaponData = WeaponData {
     magazine: 7,
@@ -69,6 +109,7 @@ pub const PISTOL: WeaponData = WeaponData {
     recoil_kick: 0.045,
     mode: FireMode::SemiAutomatic,
     bolt_seconds: 0.0,
+    hip_fire_spread_radians: 0.015,
 };
 pub const SNIPER_ADS_IN_SECONDS: f32 = 0.50;
 pub const SNIPER_ADS_OUT_SECONDS: f32 = 0.20;
@@ -84,6 +125,7 @@ pub const SNIPER: WeaponData = WeaponData {
     recoil_kick: 0.075,
     mode: FireMode::BoltAction,
     bolt_seconds: 1.2,
+    hip_fire_spread_radians: 0.010,
 };
 
 pub struct Weapon {

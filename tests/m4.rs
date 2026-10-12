@@ -1,5 +1,5 @@
 use glam::Vec3;
-use liteweight_fps::simulation::weapon::{FireInput, Loadout, WeaponKind};
+use liteweight_fps::simulation::weapon::{FireInput, Loadout, ShotSpreadRng, WeaponKind};
 
 #[test]
 fn loadout_starts_with_ar_and_keeps_magazines_per_weapon() {
@@ -468,21 +468,16 @@ fn sniper_ads_fov_change_does_not_move_or_pitch_the_player_camera() {
 }
 
 #[test]
-fn hip_fire_direction_has_no_random_shot_to_shot_spread() {
-    let mut loadout = Loadout::default();
+fn hip_fire_spread_varies_by_shot_and_stays_within_weapon_cone() {
+    let mut rng = ShotSpreadRng::new(42);
     let view = -Vec3::Z;
-    let ar = loadout.active();
-    assert_eq!(ar.shot_direction(view), view);
+    let spread = 0.02;
+    let first = rng.apply(view, spread);
+    let second = rng.apply(view, spread);
 
-    loadout.switch(WeaponKind::Sniper);
-    let sniper = loadout.active();
-    let sniper_direction = sniper.shot_direction(view);
-    assert_eq!(sniper_direction, sniper.shot_direction(view));
-    assert_ne!(sniper_direction, view);
-
-    loadout.switch(WeaponKind::Pistol);
-    let pistol = loadout.active();
-    assert_eq!(pistol.shot_direction(view), view);
+    assert_ne!(first, second);
+    assert!(first.dot(view).acos() <= spread + 1e-5);
+    assert!(second.dot(view).acos() <= spread + 1e-5);
 }
 
 #[test]

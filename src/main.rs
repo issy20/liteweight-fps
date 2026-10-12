@@ -12,7 +12,7 @@ use liteweight_fps::{
         game_mode::{SessionMode, TrainingSession},
         player::Input,
         time::FixedStep,
-        weapon::{FireInput, Loadout, WeaponKind},
+        weapon::{FireInput, Loadout, ShotSpreadRng, WeaponKind},
         Player,
     },
     world, Options, Run,
@@ -122,6 +122,7 @@ struct App {
     colliders: Vec<Aabb>,
     input: Input,
     weapons: Loadout,
+    shot_spread_rng: ShotSpreadRng,
     fire_input: FireInput,
     combat: Combat,
     settings: GameSettings,
@@ -164,7 +165,13 @@ impl App {
         {
             return;
         }
-        let shot_direction = self.weapons.active().shot_direction(view_direction);
+        let weapon = self.weapons.active();
+        let mut shot_direction = weapon.shot_direction(view_direction);
+        if self.session.mode().hip_fire_spread_enabled() && weapon.ads_progress <= 0.0 {
+            shot_direction = self
+                .shot_spread_rng
+                .apply(shot_direction, weapon.data.hip_fire_spread_radians);
+        }
         let (aspect, weapon_y_offset) = self
             .renderer
             .as_ref()
@@ -1262,6 +1269,7 @@ fn main() {
         colliders: world::arena_colliders_scaled(arena_scale),
         input: Input::default(),
         weapons: Loadout::default(),
+        shot_spread_rng: ShotSpreadRng::from_entropy(),
         fire_input: FireInput::default(),
         combat: Combat::default(),
         settings,

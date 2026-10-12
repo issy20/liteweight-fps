@@ -792,6 +792,9 @@ fn tracking_aim_disables_camera_and_weapon_recoil() {
 
     assert!(!SessionMode::TrackingAim.recoil_enabled());
     assert!(SessionMode::FreeTraining.recoil_enabled());
+    assert!(!SessionMode::TrackingAim.hip_fire_spread_enabled());
+    assert!(SessionMode::FreeTraining.hip_fire_spread_enabled());
+    assert!(SessionMode::FiveMinuteChallenge.hip_fire_spread_enabled());
 }
 
 #[test]
