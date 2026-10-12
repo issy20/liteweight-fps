@@ -1,3 +1,4 @@
+use glam::Vec3;
 use liteweight_fps::persistence::{BindingAction, BindingKey, GameSettings};
 use liteweight_fps::ui::menu::{PauseMenuAction, PauseSelection, TitleMenuAction, TitleSelection};
 use liteweight_fps::{
@@ -124,6 +125,7 @@ struct App {
     fire_input: FireInput,
     combat: Combat,
     settings: GameSettings,
+    tracking_bot_count: u32,
     session: TrainingSession,
     title_screen: bool,
     settings_menu: bool,
@@ -219,6 +221,17 @@ impl App {
         }
         event_loop.exit();
     }
+    fn adjust_runtime_setting(&mut self, setting: usize, direction: f32) {
+        if setting == 3
+            && !self.settings_from_title
+            && self.session.mode() == SessionMode::TrackingAim
+        {
+            self.tracking_bot_count =
+                (self.tracking_bot_count as f32 + direction.signum()).clamp(1.0, 5.0) as u32;
+        } else {
+            self.settings.adjust_setting(setting, direction);
+        }
+    }
     fn fail(&mut self, event_loop: &ActiveEventLoop, message: String) {
         eprintln!("{message}");
         self.error = Some(message);
@@ -294,11 +307,13 @@ impl App {
         self.fire_input = FireInput::default();
         self.combat = Combat::default();
         if mode == SessionMode::TrackingAim {
+            self.tracking_bot_count = self.settings.bot_count.min(5);
             self.combat.configure_tracking_bots(
-                self.settings.bot_count,
+                self.tracking_bot_count,
                 self.settings.bot_hp,
                 self.settings.bot_speed,
                 self.settings.bot_respawn_seconds,
+                self.player.position,
             );
             self.colliders = world::tracking_colliders();
             if let Some(renderer) = &mut self.renderer {
@@ -340,12 +355,13 @@ impl App {
     fn apply_runtime_setting(&mut self, setting: usize) {
         match setting {
             3 | 4 | 6 | 7 | 8 => {
-                if self.session.mode() == SessionMode::TrackingAim {
+                if !self.settings_from_title && self.session.mode() == SessionMode::TrackingAim {
                     self.combat.configure_tracking_bots(
-                        self.settings.bot_count,
+                        self.tracking_bot_count,
                         self.settings.bot_hp,
                         self.settings.bot_speed,
                         self.settings.bot_respawn_seconds,
+                        self.player.position,
                     );
                     self.colliders = world::tracking_colliders();
                     if let Some(renderer) = &mut self.renderer {
@@ -762,7 +778,7 @@ impl ApplicationHandler for App {
                                     (self.binding_selection + BindingAction::ALL.len() - 1)
                                         % BindingAction::ALL.len();
                             } else if let Some(index) = self.pause_selection.setting_index() {
-                                self.settings.adjust_setting(index, -1.0);
+                                self.adjust_runtime_setting(index, -1.0);
                                 self.apply_runtime_setting(index);
                                 self.save_settings();
                             }
@@ -774,7 +790,7 @@ impl ApplicationHandler for App {
                                 self.binding_selection =
                                     (self.binding_selection + 1) % BindingAction::ALL.len();
                             } else if let Some(index) = self.pause_selection.setting_index() {
-                                self.settings.adjust_setting(index, 1.0);
+                                self.adjust_runtime_setting(index, 1.0);
                                 self.apply_runtime_setting(index);
                                 self.save_settings();
                             }
@@ -783,6 +799,7 @@ impl ApplicationHandler for App {
                             if pressed && !event.repeat && self.settings_menu =>
                         {
                             self.settings = GameSettings::default();
+                            self.tracking_bot_count = self.settings.bot_count.min(5);
                             self.binding_selection = 0;
                             self.waiting_for_binding = false;
                             for index in [3, 4, 5, 6, 7, 8] {
@@ -930,8 +947,14 @@ impl ApplicationHandler for App {
                         self.player
                             .move_with_collision(&self.colliders, input, 1. / 60.);
                         self.weapons.advance(1. / 60., self.fire_input.ads);
-                        self.combat
-                            .advance(1. / 60., self.player.position, &self.colliders);
+                        let view_right =
+                            Vec3::new(self.player.yaw.cos(), 0.0, self.player.yaw.sin());
+                        self.combat.advance_with_view(
+                            1. / 60.,
+                            self.player.position,
+                            view_right,
+                            &self.colliders,
+                        );
                         let (held, pressed) = self.fire_input.take_state();
                         if held || pressed {
                             self.fire(held, pressed);
@@ -972,6 +995,10 @@ impl ApplicationHandler for App {
                 }
                 let r = self.renderer.as_mut().unwrap();
                 let (w, h) = r.internal_size();
+                let mut display_settings = self.settings.clone();
+                if !self.settings_from_title && self.session.mode() == SessionMode::TrackingAim {
+                    display_settings.bot_count = self.tracking_bot_count;
+                }
                 let matrix = if let Some(run) = &self.benchmark {
                     run.matrix(w, h, false)
                 } else {
@@ -984,7 +1011,7 @@ impl ApplicationHandler for App {
                         aspect,
                         switch_offset,
                         self.settings_menu
-                            .then_some((&self.settings, self.pause_selection.selected_index())),
+                            .then_some((&display_settings, self.pause_selection.selected_index())),
                         infinite_ammo_active,
                     );
                     if self.title_screen {
@@ -1013,7 +1040,7 @@ impl ApplicationHandler for App {
                     } else if self.settings_menu {
                         liteweight_fps::ui::settings_text_with_bindings_into(
                             &mut self.text_mesh,
-                            &self.settings,
+                            &display_settings,
                             self.pause_selection.selected_index(),
                             [w, h],
                             self.settings_from_title,
@@ -1212,6 +1239,7 @@ fn main() {
     let event_loop = builder.build().expect("event loop");
     let title_screen = !smoke && options.is_none();
     let settings = GameSettings::load();
+    let tracking_bot_count = settings.bot_count.min(5);
     let arena_scale = world::arena_scale_for_bot_count(settings.bot_count);
     let mut app = App {
         renderer: None,
@@ -1237,6 +1265,7 @@ fn main() {
         fire_input: FireInput::default(),
         combat: Combat::default(),
         settings,
+        tracking_bot_count,
         session: TrainingSession::new(SessionMode::FreeTraining),
         title_screen,
         settings_menu: false,

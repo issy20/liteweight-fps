@@ -143,7 +143,9 @@ fn repeated_respawns_cycle_across_the_arena_instead_of_clustering_near_the_playe
 
 #[test]
 fn bot_render_mesh_is_a_faceless_mannequin_with_clear_head_accent() {
-    let combat = Combat::new(vec![Bot::new(Vec3::new(0.0, 0.0, -5.0))]);
+    let mut bot = Bot::new(Vec3::new(0.0, 0.0, -5.0));
+    bot.yaw = 0.0;
+    let combat = Combat::new(vec![bot]);
     let mesh = liteweight_fps::ui::world_mesh(&combat);
     assert!(
         mesh.vertices.len() > 48,
@@ -298,9 +300,70 @@ fn bot_render_mesh_is_a_faceless_mannequin_with_clear_head_accent() {
 }
 
 #[test]
+fn bots_have_varied_horizontal_facing_on_spawn_and_turn_on_respawn() {
+    use liteweight_fps::simulation::bot::{Bot, BotBehavior};
+
+    let mut bots: Vec<_> = (0..5)
+        .map(|slot| Bot::with_behavior(Vec3::ZERO, BotBehavior::Static, slot))
+        .collect();
+    assert!(bots
+        .iter()
+        .all(|bot| (0.0..std::f32::consts::TAU).contains(&bot.yaw)));
+    assert!(bots
+        .windows(2)
+        .all(|pair| (pair[0].yaw - pair[1].yaw).abs() > 0.1));
+
+    let previous_yaw = bots[0].yaw;
+    bots[0].respawn(Vec3::new(1.0, 0.0, 0.0));
+    assert_ne!(bots[0].yaw, previous_yaw);
+}
+
+#[test]
+fn rotated_bot_hitboxes_follow_the_mannequin_orientation() {
+    let mut bot = Bot::new(Vec3::new(0.0, 0.0, 0.0));
+    bot.yaw = std::f32::consts::FRAC_PI_2;
+    let mut combat = Combat::new(vec![bot]);
+    let shot = combat.shoot(Vec3::new(-2.0, 1.38, 0.0), Vec3::X, &[], 25);
+
+    assert!(
+        shot.hit,
+        "the rotated chest should be hittable from its front"
+    );
+    assert_eq!(combat.targets[0].hp, 75);
+}
+
+#[test]
+fn moving_bots_use_individual_horizontal_lanes() {
+    for behavior in [BotBehavior::Strafe, BotBehavior::TrackingStrafe] {
+        let mut bots: Vec<_> = (0..5)
+            .map(|slot| Bot::with_behavior(Vec3::new(slot as f32 * 7.0, 0.0, 0.0), behavior, slot))
+            .collect();
+        let starts: Vec<_> = bots.iter().map(|bot| bot.position).collect();
+        for _ in 0..20 {
+            for (index, bot) in bots.iter_mut().enumerate() {
+                bot.advance_motion(index, 1.0 / 60.0, Vec3::ZERO, &[], &[]);
+            }
+        }
+        let directions: Vec<_> = bots
+            .iter()
+            .zip(starts)
+            .map(|(bot, start)| (bot.position - start).normalize_or_zero())
+            .collect();
+
+        assert!(directions.iter().all(|direction| direction.is_finite()));
+        assert!(directions.iter().enumerate().any(|(index, direction)| {
+            directions[index + 1..]
+                .iter()
+                .any(|other| direction.dot(*other).abs() < 0.95)
+        }));
+    }
+}
+
+#[test]
 fn mannequin_uses_short_neck_and_longer_legs() {
-    let mesh =
-        liteweight_fps::ui::world_mesh(&Combat::new(vec![Bot::new(Vec3::new(0.0, 0.0, -5.0))]));
+    let mut bot = Bot::new(Vec3::new(0.0, 0.0, -5.0));
+    bot.yaw = 0.0;
+    let mesh = liteweight_fps::ui::world_mesh(&Combat::new(vec![bot]));
     let horizontal_span_at = |height: f32| {
         let xs = mesh
             .vertices
@@ -414,7 +477,9 @@ fn hitscan_does_not_hit_empty_space_outside_the_rendered_shoulder() {
 
 #[test]
 fn hitscan_does_not_hit_outside_the_narrow_torso_waist() {
-    let mut combat = Combat::new(vec![Bot::new(Vec3::new(0.0, 0.0, -5.0))]);
+    let mut bot = Bot::new(Vec3::new(0.0, 0.0, -5.0));
+    bot.yaw = 0.0;
+    let mut combat = Combat::new(vec![bot]);
     let direction = Vec3::new(0.15 / 4.85, 0.0, -1.0);
     let shot = combat.shoot(Vec3::new(0.0, 1.17, 0.0), direction, &[], 25);
 

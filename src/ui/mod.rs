@@ -28,7 +28,7 @@ pub fn world_mesh_into(mesh: &mut Scene, combat: &Combat) {
     mesh.indices
         .reserve(combat.targets.len() * BOT_INDEX_CAPACITY + 36);
     for t in combat.targets.iter().filter(|target| target.alive) {
-        mannequin(mesh, t.position, t.flash > 0.0);
+        mannequin(mesh, t.position, t.yaw, t.flash > 0.0);
     }
     if combat.feedback > 0.0 && combat.last_shot.impact {
         mesh.cube(
@@ -42,7 +42,8 @@ pub fn world_mesh_into(mesh: &mut Scene, combat: &Combat) {
 const BOT_VERTEX_CAPACITY: usize = 256;
 const BOT_INDEX_CAPACITY: usize = 960;
 
-fn mannequin(mesh: &mut Scene, position: Vec3, hit_flash: bool) {
+fn mannequin(mesh: &mut Scene, position: Vec3, yaw: f32, hit_flash: bool) {
+    let first_vertex = mesh.vertices.len();
     let color = if hit_flash {
         [1.0, 0.95, 0.72]
     } else {
@@ -112,6 +113,17 @@ fn mannequin(mesh: &mut Scene, position: Vec3, hit_flash: bool) {
     let head = position + Vec3::new(0.0, 1.90, 0.0);
     ellipsoid(mesh, head, Vec3::new(0.085, 0.13, 0.082), color);
     forehead_marker(mesh, head, [1.0, 0.48, 0.08]);
+
+    let (sin_yaw, cos_yaw) = yaw.sin_cos();
+    for vertex in &mut mesh.vertices[first_vertex..] {
+        let relative = Vec3::from_array(vertex.position) - position;
+        vertex.position = (Vec3::new(
+            relative.x * cos_yaw - relative.z * sin_yaw,
+            relative.y,
+            relative.x * sin_yaw + relative.z * cos_yaw,
+        ) + position)
+            .to_array();
+    }
 }
 
 const ELLIPSOID_LONGITUDES: usize = 6;

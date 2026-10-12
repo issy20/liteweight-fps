@@ -45,28 +45,73 @@ const RESPAWN_POINTS: [Vec3; 36] = [
     Vec3::new(-11.0, 0.0, -22.0),
     Vec3::new(11.0, 0.0, -22.0),
 ];
-const TRACKING_SPAWN_POINTS: [Vec3; 20] = [
-    Vec3::new(-15.0, 0.0, -10.0),
-    Vec3::new(-7.5, 0.0, -10.0),
-    Vec3::new(0.0, 0.0, -10.0),
-    Vec3::new(7.5, 0.0, -10.0),
-    Vec3::new(15.0, 0.0, -10.0),
-    Vec3::new(-15.0, 0.0, -8.0),
-    Vec3::new(-7.5, 0.0, -8.0),
-    Vec3::new(0.0, 0.0, -8.0),
-    Vec3::new(7.5, 0.0, -8.0),
-    Vec3::new(15.0, 0.0, -8.0),
-    Vec3::new(-15.0, 0.0, -6.0),
-    Vec3::new(-7.5, 0.0, -6.0),
-    Vec3::new(0.0, 0.0, -6.0),
-    Vec3::new(7.5, 0.0, -6.0),
-    Vec3::new(15.0, 0.0, -6.0),
-    Vec3::new(-15.0, 0.0, -4.0),
-    Vec3::new(-7.5, 0.0, -4.0),
-    Vec3::new(0.0, 0.0, -4.0),
-    Vec3::new(7.5, 0.0, -4.0),
-    Vec3::new(15.0, 0.0, -4.0),
-];
+const TRACKING_SPAWN_RADII: [f32; 3] = [5.5, 8.5, 11.0];
+const TRACKING_SPAWN_MIN_X: f32 = -16.5;
+const TRACKING_SPAWN_MAX_X: f32 = 16.5;
+const TRACKING_SPAWN_MIN_Z: f32 = -10.0;
+const TRACKING_SPAWN_MAX_Z: f32 = 10.0;
+const TRACKING_SPAWN_MIN_SEPARATION: f32 = 2.5;
+
+fn tracking_spawn_candidates(player_position: Vec3) -> Vec<Vec3> {
+    let mut candidates = Vec::with_capacity(TRACKING_SPAWN_RADII.len() * 24);
+    for radius in TRACKING_SPAWN_RADII {
+        for step in 0..24 {
+            let angle = std::f32::consts::TAU * step as f32 / 24.0;
+            let position = Vec3::new(
+                player_position.x + angle.cos() * radius,
+                0.0,
+                player_position.z + angle.sin() * radius,
+            );
+            let inside_range = (TRACKING_SPAWN_MIN_X..=TRACKING_SPAWN_MAX_X).contains(&position.x)
+                && (TRACKING_SPAWN_MIN_Z..=TRACKING_SPAWN_MAX_Z).contains(&position.z);
+            if inside_range
+                && candidates
+                    .iter()
+                    .all(|candidate: &Vec3| horizontal_distance(*candidate, position) > 1.0)
+            {
+                candidates.push(position);
+            }
+        }
+    }
+    candidates
+}
+
+fn tracking_spawn_positions(player_position: Vec3, count: usize) -> Vec<Vec3> {
+    let candidates = tracking_spawn_candidates(player_position);
+    let mut selected = Vec::with_capacity(count);
+    while selected.len() < count {
+        let best = candidates
+            .iter()
+            .enumerate()
+            .filter(|(_, candidate)| {
+                selected.iter().all(|existing| {
+                    horizontal_distance(*existing, **candidate) >= TRACKING_SPAWN_MIN_SEPARATION
+                })
+            })
+            .max_by(|(_, left), (_, right)| {
+                let separation = |candidate: &Vec3| {
+                    selected
+                        .iter()
+                        .map(|existing| horizontal_distance(*existing, *candidate))
+                        .fold(f32::INFINITY, f32::min)
+                };
+                separation(left).total_cmp(&separation(right))
+            })
+            .map(|(_, candidate)| *candidate)
+            .or_else(|| {
+                candidates.iter().copied().find(|candidate| {
+                    selected
+                        .iter()
+                        .all(|existing| horizontal_distance(*existing, *candidate) >= 1.0)
+                })
+            });
+        let Some(position) = best else {
+            break;
+        };
+        selected.push(position);
+    }
+    selected
+}
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Shot {
@@ -190,7 +235,7 @@ impl Combat {
                     index,
                 );
                 bot.arena_scale = self.arena_scale;
-                bot.hp = hp.clamp(50, 200);
+                bot.set_max_hp(hp.clamp(50, 200));
                 bot.speed_multiplier = speed_multiplier.clamp(0.5, 2.0);
                 bot.respawn_seconds = respawn_seconds.clamp(0.5, 10.0);
                 bot
@@ -204,19 +249,19 @@ impl Combat {
         hp: u32,
         speed_multiplier: f32,
         respawn_seconds: f32,
+        player_position: Vec3,
     ) {
-        let tracking_spawn_count = count.clamp(2, TRACKING_SPAWN_POINTS.len() as u32) as usize;
+        let tracking_spawn_count = count.clamp(1, 5) as usize;
         self.arena_scale = 1.0;
-        self.targets = TRACKING_SPAWN_POINTS
-            .iter()
-            .copied()
-            .take(tracking_spawn_count)
+        self.targets = tracking_spawn_positions(player_position, tracking_spawn_count)
+            .into_iter()
             .enumerate()
             .map(|(index, position)| {
                 let mut bot = Bot::with_behavior(position, BotBehavior::TrackingStrafe, index);
-                bot.hp = hp.clamp(50, 200);
+                bot.set_max_hp(hp.clamp(50, 200).saturating_mul(3));
                 bot.speed_multiplier = speed_multiplier.clamp(0.5, 2.0);
                 bot.respawn_seconds = respawn_seconds.clamp(0.5, 10.0);
+                bot.face_toward_player(player_position);
                 bot
             })
             .collect();
@@ -230,6 +275,21 @@ impl Combat {
     }
 
     pub fn advance(&mut self, dt: f32, player_position: Vec3, walls: &[Aabb]) {
+        self.advance_with_view(dt, player_position, Vec3::X, walls);
+    }
+
+    pub fn advance_with_view(
+        &mut self,
+        dt: f32,
+        player_position: Vec3,
+        view_right: Vec3,
+        walls: &[Aabb],
+    ) {
+        let tracking_aim = !self.targets.is_empty()
+            && self
+                .targets
+                .iter()
+                .all(|bot| bot.behavior == BotBehavior::TrackingStrafe);
         self.feedback = (self.feedback - dt).max(0.0);
         for bot in &mut self.targets {
             bot.advance_timers(dt);
@@ -241,33 +301,33 @@ impl Combat {
             .map(|bot| bot.alive.then_some(bot.position))
             .collect::<Vec<_>>();
         for (index, bot) in self.targets.iter_mut().enumerate() {
+            if tracking_aim && bot.alive {
+                bot.align_tracking_to_player(player_position, view_right);
+            }
             bot.advance_motion(index, dt, player_position, walls, &positions);
             positions[index] = bot.alive.then_some(bot.position);
         }
 
-        let tracking_aim = !self.targets.is_empty()
-            && self
-                .targets
-                .iter()
-                .all(|bot| bot.behavior == BotBehavior::TrackingStrafe);
         for index in 0..self.targets.len() {
             if self.targets[index].alive || self.targets[index].respawn_remaining > 0.0 {
                 continue;
             }
             let respawn = if tracking_aim {
-                self.choose_tracking_respawn(index, walls, &positions)
+                self.choose_tracking_respawn(index, player_position, walls, &positions)
             } else {
                 self.choose_respawn(index, player_position, walls, &positions)
             };
             if let Some((spawn_index, position)) = respawn {
                 self.targets[index].respawn(position);
+                if tracking_aim {
+                    self.targets[index].align_tracking_to_player(player_position, view_right);
+                }
                 positions[index] = Some(position);
-                let points_len = if tracking_aim {
-                    self.targets.len()
+                self.spawn_cursor = if tracking_aim {
+                    spawn_index + 1
                 } else {
-                    RESPAWN_POINTS.len()
+                    (spawn_index + 1) % RESPAWN_POINTS.len()
                 };
-                self.spawn_cursor = (spawn_index + 1) % points_len;
             }
         }
     }
@@ -304,17 +364,42 @@ impl Combat {
     fn choose_tracking_respawn(
         &self,
         bot_index: usize,
+        player_position: Vec3,
         walls: &[Aabb],
         positions: &[Option<Vec3>],
     ) -> Option<(usize, Vec3)> {
-        (0..self.targets.len())
-            .map(|offset| ((self.spawn_cursor + offset) % self.targets.len(), offset))
-            .find_map(|(index, _)| {
-                let position = TRACKING_SPAWN_POINTS[index];
-                self.targets[bot_index]
-                    .can_spawn_at(position, bot_index, walls, positions)
-                    .then_some((index, position))
-            })
+        let candidates = tracking_spawn_candidates(player_position);
+        if candidates.is_empty() {
+            return None;
+        }
+        let mut best_spaced = None;
+        let mut best_fallback = None;
+        for offset in 0..candidates.len() {
+            let index = (self.spawn_cursor + offset) % candidates.len();
+            let position = candidates[index];
+            if !self.targets[bot_index].can_spawn_at(position, bot_index, walls, positions) {
+                continue;
+            }
+            let nearest_bot = positions
+                .iter()
+                .enumerate()
+                .filter(|(other_index, _)| *other_index != bot_index)
+                .filter_map(|(_, other)| *other)
+                .map(|other| horizontal_distance(position, other))
+                .fold(f32::INFINITY, f32::min);
+            let candidate = (index, position, nearest_bot);
+            if best_fallback.is_none_or(|(_, _, best_distance)| nearest_bot > best_distance) {
+                best_fallback = Some(candidate);
+            }
+            if nearest_bot >= TRACKING_SPAWN_MIN_SEPARATION
+                && best_spaced.is_none_or(|(_, _, best_distance)| nearest_bot > best_distance)
+            {
+                best_spaced = Some(candidate);
+            }
+        }
+        best_spaced
+            .or(best_fallback)
+            .map(|(index, position, _)| (index, position))
     }
 
     pub fn shoot(&mut self, origin: Vec3, direction: Vec3, walls: &[Aabb], damage: u32) -> Shot {

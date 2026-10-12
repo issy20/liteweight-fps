@@ -13,6 +13,8 @@ const BOT_STRAFE_ANGULAR_SPEED: f32 = 0.9;
 const TRACKING_STRAFE_MIN_STEPS: u16 = 45;
 const TRACKING_STRAFE_MAX_STEPS: u16 = 120;
 const TRACKING_STRAFE_HALF_WIDTH: f32 = 2.5;
+const TRACKING_CENTER_MAX_X: f32 = 19.14;
+const TRACKING_CENTER_MAX_Z: f32 = 11.14;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BotBehavior {
@@ -26,6 +28,8 @@ pub enum BotBehavior {
 pub struct BotHitbox {
     pub bounds: Aabb,
     pub headshot: bool,
+    origin: Vec3,
+    yaw: f32,
     shape: HitboxShape,
 }
 
@@ -38,15 +42,27 @@ enum HitboxShape {
 
 impl BotHitbox {
     pub fn ray_distance(&self, origin: Vec3, direction: Vec3) -> Option<f32> {
+        let relative_origin = origin - self.origin;
+        let (sin_yaw, cos_yaw) = self.yaw.sin_cos();
+        let local_origin = Vec3::new(
+            relative_origin.x * cos_yaw + relative_origin.z * sin_yaw,
+            relative_origin.y,
+            -relative_origin.x * sin_yaw + relative_origin.z * cos_yaw,
+        );
+        let local_direction = Vec3::new(
+            direction.x * cos_yaw + direction.z * sin_yaw,
+            direction.y,
+            -direction.x * sin_yaw + direction.z * cos_yaw,
+        );
         match self.shape {
             HitboxShape::Ellipsoid { center, radii } => {
-                ray_ellipsoid_distance(origin, direction, center, radii)
+                ray_ellipsoid_distance(local_origin, local_direction, center, radii)
             }
             HitboxShape::Capsule { start, end, radius } => {
-                ray_capsule_distance(origin, direction, start, end, radius)
+                ray_capsule_distance(local_origin, local_direction, start, end, radius)
             }
             HitboxShape::LoftedTorso { position } => {
-                ray_torso_distance(origin, direction, position)
+                ray_torso_distance(local_origin, local_direction, position)
             }
         }
     }
@@ -54,7 +70,9 @@ impl BotHitbox {
 
 pub struct Bot {
     pub position: Vec3,
+    pub yaw: f32,
     pub hp: u32,
+    max_hp: u32,
     pub flash: f32,
     pub alive: bool,
     pub behavior: BotBehavior,
@@ -64,7 +82,9 @@ pub struct Bot {
     spawn_slot: usize,
     ai_accumulator: f32,
     strafe_phase: f32,
-    tracking_origin_x: f32,
+    movement_axis: Vec3,
+    tracking_origin: Vec3,
+    tracking_half_width: f32,
     tracking_direction: f32,
     tracking_steps_remaining: u16,
     tracking_rng: u32,
@@ -79,11 +99,6 @@ impl Bot {
     }
 
     pub fn with_behavior(position: Vec3, behavior: BotBehavior, spawn_slot: usize) -> Self {
-        let strafe_phase = if spawn_slot.is_multiple_of(2) {
-            0.0
-        } else {
-            std::f32::consts::PI
-        };
         let mut tracking_rng = (spawn_slot as u32)
             .wrapping_add(1)
             .wrapping_mul(0x9E37_79B9)
@@ -93,14 +108,20 @@ impl Bot {
         } else {
             0
         };
-        let tracking_direction = if spawn_slot.is_multiple_of(2) {
+        let yaw = random_bot_yaw(&mut tracking_rng);
+        let movement_axis = random_horizontal_axis(&mut tracking_rng);
+        let strafe_phase = random_bot_yaw(&mut tracking_rng);
+        let tracking_direction = if next_bot_random(&mut tracking_rng).is_multiple_of(2) {
             1.0
         } else {
             -1.0
         };
+        let tracking_half_width = tracking_lane_half_width(position, movement_axis);
         Self {
             position,
+            yaw,
             hp: 100,
+            max_hp: 100,
             flash: 0.0,
             alive: true,
             behavior,
@@ -110,14 +131,18 @@ impl Bot {
             spawn_slot,
             ai_accumulator: 0.0,
             strafe_phase,
-            tracking_origin_x: position.x,
+            movement_axis,
+            tracking_origin: position,
+            tracking_half_width,
             tracking_direction,
             tracking_steps_remaining,
             tracking_rng,
             chase_waypoint: 0,
             move_direction: match behavior {
-                BotBehavior::Strafe => Vec3::X * (BOT_STRAFE_SPEED * strafe_phase.cos()),
-                BotBehavior::TrackingStrafe => Vec3::X * (BOT_STRAFE_SPEED * tracking_direction),
+                BotBehavior::Strafe => movement_axis * (BOT_STRAFE_SPEED * strafe_phase.cos()),
+                BotBehavior::TrackingStrafe => {
+                    movement_axis * (BOT_STRAFE_SPEED * tracking_direction)
+                }
                 BotBehavior::Static | BotBehavior::Chase => Vec3::ZERO,
             },
             arena_scale: 1.0,
@@ -128,11 +153,9 @@ impl Bot {
         let capsule = |min: Vec3, max: Vec3, start: Vec3, end: Vec3, radius| BotHitbox {
             bounds: Aabb::new(self.position + min, self.position + max),
             headshot: false,
-            shape: HitboxShape::Capsule {
-                start: self.position + start,
-                end: self.position + end,
-                radius,
-            },
+            origin: self.position,
+            yaw: self.yaw,
+            shape: HitboxShape::Capsule { start, end, radius },
         };
         let ellipsoid = |center: Vec3, radii: Vec3, headshot| BotHitbox {
             bounds: Aabb::new(
@@ -140,10 +163,9 @@ impl Bot {
                 self.position + center + radii,
             ),
             headshot,
-            shape: HitboxShape::Ellipsoid {
-                center: self.position + center,
-                radii,
-            },
+            origin: self.position,
+            yaw: self.yaw,
+            shape: HitboxShape::Ellipsoid { center, radii },
         };
         [
             BotHitbox {
@@ -152,8 +174,10 @@ impl Bot {
                     self.position + Vec3::new(0.24, 1.67, 0.15),
                 ),
                 headshot: false,
+                origin: self.position,
+                yaw: self.yaw,
                 shape: HitboxShape::LoftedTorso {
-                    position: self.position,
+                    position: Vec3::ZERO,
                 },
             },
             capsule(
@@ -218,6 +242,11 @@ impl Bot {
         }
     }
 
+    pub fn set_max_hp(&mut self, max_hp: u32) {
+        self.max_hp = max_hp.max(1);
+        self.hp = self.max_hp;
+    }
+
     pub fn advance_timers(&mut self, dt: f32) {
         self.flash = (self.flash - dt).max(0.0);
         if !self.alive {
@@ -244,7 +273,7 @@ impl Bot {
         if self.behavior == BotBehavior::Strafe {
             self.strafe_phase = (self.strafe_phase + BOT_STRAFE_ANGULAR_SPEED * dt)
                 .rem_euclid(std::f32::consts::TAU);
-            self.move_direction = Vec3::X * (BOT_STRAFE_SPEED * self.strafe_phase.cos());
+            self.move_direction = self.movement_axis * (BOT_STRAFE_SPEED * self.strafe_phase.cos());
         }
         if self.behavior == BotBehavior::TrackingStrafe {
             if self.tracking_steps_remaining == 0 {
@@ -252,29 +281,43 @@ impl Bot {
                 self.tracking_steps_remaining = random_tracking_stride(&mut self.tracking_rng);
             }
             self.tracking_steps_remaining -= 1;
-            let next_x = self.position.x
+            let current_offset = (self.position - self.tracking_origin).dot(self.movement_axis);
+            let next_offset = current_offset
                 + BOT_STRAFE_SPEED * self.tracking_direction * dt * self.speed_multiplier;
-            let min_x = self.tracking_origin_x - TRACKING_STRAFE_HALF_WIDTH;
-            let max_x = self.tracking_origin_x + TRACKING_STRAFE_HALF_WIDTH;
-            if next_x < min_x || next_x > max_x {
+            if next_offset < -self.tracking_half_width || next_offset > self.tracking_half_width {
                 self.tracking_direction = -self.tracking_direction;
                 self.tracking_steps_remaining = random_tracking_stride(&mut self.tracking_rng);
             }
-            self.move_direction = Vec3::X * (BOT_STRAFE_SPEED * self.tracking_direction);
+            self.move_direction = self.movement_axis * (BOT_STRAFE_SPEED * self.tracking_direction);
         }
-        let displacement = self.move_direction * (dt * self.speed_multiplier);
+        let mut destination = self.position + self.move_direction * (dt * self.speed_multiplier);
+        if self.behavior == BotBehavior::TrackingStrafe {
+            let offset = (destination - self.tracking_origin).dot(self.movement_axis);
+            let clamped = offset.clamp(-self.tracking_half_width, self.tracking_half_width);
+            destination += self.movement_axis * (clamped - offset);
+        }
         for axis in [0, 2] {
             let mut candidate = self.position;
-            candidate[axis] += displacement[axis];
-            if self.behavior == BotBehavior::TrackingStrafe && axis == 0 {
-                candidate.x = candidate.x.clamp(
-                    self.tracking_origin_x - TRACKING_STRAFE_HALF_WIDTH,
-                    self.tracking_origin_x + TRACKING_STRAFE_HALF_WIDTH,
-                );
-            }
+            candidate[axis] = destination[axis];
             if !self.collides(candidate, index, walls, other_positions) {
                 self.position = candidate;
             }
+        }
+    }
+
+    pub fn align_tracking_to_player(&mut self, player_position: Vec3, view_right: Vec3) {
+        let view_right = horizontal(view_right).normalize_or_zero();
+        if view_right.length_squared() > 0.0 {
+            self.movement_axis = view_right;
+            self.tracking_half_width = tracking_lane_half_width(self.tracking_origin, view_right);
+        }
+        self.face_toward_player(player_position);
+    }
+
+    pub fn face_toward_player(&mut self, player_position: Vec3) {
+        let toward_player = horizontal(player_position - self.position);
+        if toward_player.length_squared() > 1e-8 {
+            self.yaw = (-toward_player.x).atan2(-toward_player.z);
         }
     }
 
@@ -355,17 +398,21 @@ impl Bot {
 
     pub fn respawn(&mut self, position: Vec3) {
         self.position = position;
-        self.hp = 100;
+        self.yaw = random_bot_yaw(&mut self.tracking_rng);
+        self.hp = self.max_hp;
         self.flash = 0.0;
         self.alive = true;
         self.respawn_remaining = 0.0;
         self.ai_accumulator = 0.0;
-        self.strafe_phase = if self.spawn_slot.is_multiple_of(2) {
-            0.0
+        self.movement_axis = random_horizontal_axis(&mut self.tracking_rng);
+        self.strafe_phase = random_bot_yaw(&mut self.tracking_rng);
+        self.tracking_origin = position;
+        self.tracking_half_width = tracking_lane_half_width(position, self.movement_axis);
+        self.tracking_direction = if next_bot_random(&mut self.tracking_rng).is_multiple_of(2) {
+            1.0
         } else {
-            std::f32::consts::PI
+            -1.0
         };
-        self.tracking_origin_x = position.x;
         self.tracking_steps_remaining = random_tracking_stride(&mut self.tracking_rng);
         self.chase_waypoint = 0;
         self.move_direction = Vec3::ZERO;
@@ -373,11 +420,41 @@ impl Bot {
 }
 
 fn random_tracking_stride(state: &mut u32) -> u16 {
+    TRACKING_STRAFE_MIN_STEPS
+        + (next_bot_random(state) as u16
+            % (TRACKING_STRAFE_MAX_STEPS - TRACKING_STRAFE_MIN_STEPS + 1))
+}
+
+fn random_bot_yaw(state: &mut u32) -> f32 {
+    (next_bot_random(state) as f32 / u32::MAX as f32) * std::f32::consts::TAU
+}
+
+fn random_horizontal_axis(state: &mut u32) -> Vec3 {
+    let angle = random_bot_yaw(state);
+    Vec3::new(angle.cos(), 0.0, angle.sin())
+}
+
+fn tracking_lane_half_width(origin: Vec3, axis: Vec3) -> f32 {
+    let distance_to_edge = |position: f32, direction: f32, limit: f32| {
+        if direction > 0.0 {
+            (limit - position) / direction
+        } else if direction < 0.0 {
+            (-limit - position) / direction
+        } else {
+            f32::INFINITY
+        }
+    };
+    TRACKING_STRAFE_HALF_WIDTH
+        .min(distance_to_edge(origin.x, axis.x, TRACKING_CENTER_MAX_X))
+        .min(distance_to_edge(origin.z, axis.z, TRACKING_CENTER_MAX_Z))
+        .max(0.0)
+}
+
+fn next_bot_random(state: &mut u32) -> u32 {
     *state ^= *state << 13;
     *state ^= *state >> 17;
     *state ^= *state << 5;
-    TRACKING_STRAFE_MIN_STEPS
-        + (*state as u16 % (TRACKING_STRAFE_MAX_STEPS - TRACKING_STRAFE_MIN_STEPS + 1))
+    *state
 }
 
 const TORSO_PROFILE: [(f32, f32, f32); 6] = [
@@ -620,7 +697,18 @@ mod tests {
 
         for _ in 0..60 * 120 {
             bot.advance_motion(0, 1.0 / 60.0, Vec3::ZERO, &[], &[]);
-            assert!(bot.position.x.abs() <= TRACKING_STRAFE_HALF_WIDTH + 1e-4);
+            let offset = (bot.position - bot.tracking_origin).dot(bot.movement_axis);
+            assert!(offset.abs() <= bot.tracking_half_width + 1e-4);
         }
+    }
+
+    #[test]
+    fn tracking_strafe_reselects_its_lane_after_respawn() {
+        let mut bot = Bot::with_behavior(Vec3::ZERO, BotBehavior::TrackingStrafe, 0);
+        let initial_axis = bot.movement_axis;
+        bot.respawn(Vec3::new(4.0, 0.0, -3.0));
+
+        assert_ne!(bot.movement_axis, initial_axis);
+        assert_eq!(bot.tracking_origin, Vec3::new(4.0, 0.0, -3.0));
     }
 }

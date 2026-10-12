@@ -607,15 +607,21 @@ fn tracking_mode_uses_enclosed_cover_free_range_with_multiple_moving_targets() {
     assert_eq!(liteweight_fps::world::tracking_colliders().len(), 5);
 
     let mut combat = liteweight_fps::simulation::combat::Combat::default();
-    combat.configure_tracking_bots(5, 100, 1.0, 2.0);
+    let player_position = glam::Vec3::new(2.0, 1.65, 1.0);
+    combat.configure_tracking_bots(5, 100, 1.0, 2.0, player_position);
     assert_eq!(combat.targets.len(), 5);
     assert!(combat.targets.iter().all(|bot| {
         bot.behavior == liteweight_fps::simulation::bot::BotBehavior::TrackingStrafe
     }));
+    assert!(combat.targets.iter().all(|bot| {
+        let distance =
+            liteweight_fps::simulation::bot::horizontal_distance(bot.position, player_position);
+        (5.0..=11.5).contains(&distance)
+    }));
     let starts: Vec<_> = combat.targets.iter().map(|bot| bot.position).collect();
     combat.advance(
         1.0,
-        glam::Vec3::ZERO,
+        player_position,
         &liteweight_fps::world::tracking_colliders(),
     );
     assert!(combat
@@ -628,21 +634,156 @@ fn tracking_mode_uses_enclosed_cover_free_range_with_multiple_moving_targets() {
         .iter()
         .all(|bot| { bot.position.x.abs() < 20.0 && bot.position.z.abs() < 12.0 }));
 
-    combat.configure_tracking_bots(20, 100, 1.0, 2.0);
-    assert_eq!(combat.targets.len(), 20);
+    combat.configure_tracking_bots(20, 100, 1.0, 2.0, player_position);
+    assert_eq!(combat.targets.len(), 5);
     assert!(combat
         .targets
         .iter()
         .all(|bot| { bot.position.x.abs() < 20.0 && bot.position.z.abs() < 12.0 }));
-    assert!(combat.targets[0].apply_damage(100));
+    assert!(combat.targets[0].apply_damage(300));
     combat.advance(
         2.1,
-        glam::Vec3::ZERO,
+        player_position,
         &liteweight_fps::world::tracking_colliders(),
     );
     assert!(combat.targets[0].alive);
     assert!(combat.targets[0].position.x.abs() < 20.0);
     assert!(combat.targets[0].position.z.abs() < 12.0);
+    let respawn_distance = liteweight_fps::simulation::bot::horizontal_distance(
+        combat.targets[0].position,
+        player_position,
+    );
+    assert!((5.0..=11.5).contains(&respawn_distance));
+
+    let edge_player = glam::Vec3::new(18.0, 1.65, 10.0);
+    let mut edge_combat = liteweight_fps::simulation::combat::Combat::default();
+    edge_combat.configure_tracking_bots(5, 100, 1.0, 2.0, edge_player);
+    assert_eq!(edge_combat.targets.len(), 5);
+    assert!(edge_combat.targets.iter().all(|bot| {
+        let distance =
+            liteweight_fps::simulation::bot::horizontal_distance(bot.position, edge_player);
+        (5.0..=11.5).contains(&distance) && bot.position.x.abs() <= 16.5 && bot.position.z <= 10.0
+    }));
+}
+
+#[test]
+fn tracking_aim_moves_horizontally_from_view_and_bots_face_the_player() {
+    let mut combat = liteweight_fps::simulation::combat::Combat::default();
+    let player_position = glam::Vec3::ZERO;
+    combat.configure_tracking_bots(5, 100, 1.0, 2.0, player_position);
+    let starts: Vec<_> = combat.targets.iter().map(|bot| bot.position).collect();
+    let view_right = glam::Vec3::Z;
+
+    combat.advance_with_view(
+        1.0 / 60.0,
+        player_position,
+        view_right,
+        &liteweight_fps::world::tracking_colliders(),
+    );
+
+    for (bot, start) in combat.targets.iter().zip(starts) {
+        let movement = bot.position - start;
+        assert!(movement.z.abs() > movement.x.abs());
+        let toward_player = (player_position - bot.position).normalize();
+        let bot_forward = glam::Vec3::new(-bot.yaw.sin(), 0.0, -bot.yaw.cos());
+        assert!(bot_forward.dot(toward_player) > 0.999);
+    }
+
+    let before_turn: Vec<_> = combat.targets.iter().map(|bot| bot.position).collect();
+    combat.advance_with_view(
+        1.0 / 60.0,
+        player_position,
+        glam::Vec3::X,
+        &liteweight_fps::world::tracking_colliders(),
+    );
+    for (bot, start) in combat.targets.iter().zip(before_turn) {
+        let movement = bot.position - start;
+        assert!(movement.x.abs() > movement.z.abs());
+    }
+
+    combat.targets[0].apply_damage(300);
+    combat.advance_with_view(
+        2.1,
+        player_position,
+        view_right,
+        &liteweight_fps::world::tracking_colliders(),
+    );
+    let respawned = &combat.targets[0];
+    let toward_player = (player_position - respawned.position).normalize();
+    let bot_forward = glam::Vec3::new(-respawned.yaw.sin(), 0.0, -respawned.yaw.cos());
+    assert!(bot_forward.dot(toward_player) > 0.999);
+}
+
+#[test]
+fn tracking_respawns_keep_the_bot_group_spread_out() {
+    let player_position = glam::Vec3::ZERO;
+    let positions = [
+        glam::Vec3::new(0.0, 0.0, -8.5),
+        glam::Vec3::new(5.5, 0.0, 0.0),
+        glam::Vec3::new(0.0, 0.0, 8.5),
+        glam::Vec3::new(-8.5, 0.0, 0.0),
+        glam::Vec3::new(11.0, 0.0, 0.0),
+    ];
+    let bots = positions
+        .into_iter()
+        .enumerate()
+        .map(|(index, position)| {
+            liteweight_fps::simulation::bot::Bot::with_behavior(
+                position,
+                liteweight_fps::simulation::bot::BotBehavior::TrackingStrafe,
+                index,
+            )
+        })
+        .collect();
+    let mut combat = liteweight_fps::simulation::combat::Combat::new(bots);
+    for bot in &mut combat.targets {
+        bot.speed_multiplier = 0.0;
+        bot.respawn_seconds = 0.5;
+    }
+
+    for index in 0..combat.targets.len() {
+        combat.targets[index].apply_damage(100);
+        combat.targets[index].respawn_remaining = 0.0;
+        combat.advance(
+            0.0,
+            player_position,
+            &liteweight_fps::world::tracking_colliders(),
+        );
+
+        assert!(combat.targets[index].alive);
+        for (bot_index, bot) in combat.targets.iter().enumerate() {
+            for other in combat.targets.iter().skip(bot_index + 1) {
+                let distance = liteweight_fps::simulation::bot::horizontal_distance(
+                    bot.position,
+                    other.position,
+                );
+                assert!(
+                    distance >= 2.5,
+                    "respawned bots are only {distance:.2}m apart"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn tracking_aim_triples_configured_bot_hp_and_restores_it_on_respawn() {
+    let mut combat = liteweight_fps::simulation::combat::Combat::default();
+    let player_position = glam::Vec3::ZERO;
+    combat.configure_tracking_bots(5, 100, 1.0, 0.5, player_position);
+    assert!(combat.targets.iter().all(|bot| bot.hp == 300));
+
+    combat.configure_tracking_bots(5, 120, 1.0, 0.5, player_position);
+    assert!(combat.targets.iter().all(|bot| bot.hp == 360));
+    combat.targets[0].apply_damage(360);
+    combat.advance(
+        0.6,
+        player_position,
+        &liteweight_fps::world::tracking_colliders(),
+    );
+
+    assert!(combat.targets[0].alive);
+    assert_eq!(combat.targets[0].hp, 360);
 }
 
 #[test]
