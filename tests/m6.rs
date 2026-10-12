@@ -428,6 +428,8 @@ fn pause_menu_selects_resume_sensitivity_and_exit_actions() {
     menu.move_down();
     assert_eq!(menu.setting_index(), Some(8));
     menu.move_down();
+    assert_eq!(menu.activate(), Some(PauseMenuAction::ChangeMode));
+    menu.move_down();
     assert_eq!(menu.activate(), Some(PauseMenuAction::Exit));
     menu.move_down();
     assert_eq!(menu.activate(), Some(PauseMenuAction::Resume));

@@ -278,6 +278,16 @@ impl App {
         self.capture_requested = true;
         self.try_capture();
     }
+    fn change_mode(&mut self) {
+        self.save_settings();
+        self.settings_menu = false;
+        self.settings_from_title = false;
+        self.title_screen = true;
+        self.results_screen = false;
+        self.title_selection = TitleSelection::default();
+        self.capture_requested = false;
+        self.release_capture();
+    }
     fn begin_session(&mut self, mode: SessionMode) {
         self.player = Player::new();
         self.weapons = Loadout::default();
@@ -720,6 +730,7 @@ impl ApplicationHandler for App {
                         {
                             match self.pause_selection.activate() {
                                 Some(PauseMenuAction::Resume) => self.resume_from_pause(),
+                                Some(PauseMenuAction::ChangeMode) => self.change_mode(),
                                 Some(PauseMenuAction::Exit) => self.finish(event_loop, false),
                                 None => {
                                     if self.pause_selection.selected_index() == 5 {

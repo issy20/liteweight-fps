@@ -3,6 +3,7 @@
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PauseMenuAction {
     Resume,
+    ChangeMode,
     Exit,
 }
 
@@ -52,7 +53,7 @@ pub struct PauseSelection {
 }
 
 impl PauseSelection {
-    const ITEM_COUNT: usize = 19;
+    const ITEM_COUNT: usize = 20;
 
     pub fn selected_index(self) -> usize {
         self.selected
@@ -97,7 +98,8 @@ impl PauseSelection {
     pub fn activate(self) -> Option<PauseMenuAction> {
         match self.selected {
             0 => Some(PauseMenuAction::Resume),
-            18 => Some(PauseMenuAction::Exit),
+            18 => Some(PauseMenuAction::ChangeMode),
+            19 => Some(PauseMenuAction::Exit),
             _ => None,
         }
     }

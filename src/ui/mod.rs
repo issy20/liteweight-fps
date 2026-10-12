@@ -460,7 +460,7 @@ pub fn settings_overlay(
         aspect,
     );
 
-    let visible = settings_visible_range(selected, 19);
+    let visible = settings_visible_range(selected, 20);
     for (row, setting_index) in visible.clone().enumerate() {
         let center = SETTINGS_ROW_TOP - row as f32 * SETTINGS_ROW_GAP - 0.02;
         let height = 0.070;
@@ -472,7 +472,9 @@ pub fn settings_overlay(
             bottom,
             1.14 * aspect,
             height,
-            if selected_row {
+            if selected_row && setting_index == 19 {
+                [0.88, 0.22, 0.16, 0.23]
+            } else if selected_row {
                 [0.92, 0.48, 0.16, 0.22]
             } else {
                 [0.55, 0.64, 0.70, 0.045]
@@ -486,7 +488,11 @@ pub fn settings_overlay(
                 bottom,
                 0.008 * aspect,
                 height,
-                [1.0, 0.62, 0.25],
+                if setting_index == 19 {
+                    [1.0, 0.38, 0.28]
+                } else {
+                    [1.0, 0.62, 0.25]
+                },
                 aspect,
             );
         }
@@ -972,6 +978,15 @@ pub fn settings_text_with_bindings_into(
             "BOT RESPAWN".to_owned(),
             format!("{:.2}S", settings.bot_respawn_seconds),
         ),
+        (
+            if from_title {
+                "BACK TO MENU"
+            } else {
+                "CHANGE MODE"
+            }
+            .to_owned(),
+            String::new(),
+        ),
         ("QUIT GAME".to_owned(), String::new()),
     ];
     if waiting_for_binding {
@@ -982,7 +997,7 @@ pub fn settings_text_with_bindings_into(
         let (label, value) = &rows[index];
         let y = SETTINGS_ROW_TOP - row as f32 * SETTINGS_ROW_GAP;
         let color = if selected == index {
-            if index == 18 {
+            if index == 19 {
                 [1.0, 0.48, 0.38, 1.0]
             } else {
                 active
@@ -2045,9 +2060,25 @@ mod tests {
     #[test]
     fn settings_scroll_window_keeps_selection_visible_at_each_end() {
         assert_eq!(SETTINGS_VISIBLE_ROWS, 11);
-        assert_eq!(settings_visible_range(0, 19), 0..11);
-        assert_eq!(settings_visible_range(9, 19), 4..15);
-        assert_eq!(settings_visible_range(18, 19), 8..19);
+        assert_eq!(settings_visible_range(0, 20), 0..11);
+        assert_eq!(settings_visible_range(10, 20), 5..16);
+        assert_eq!(settings_visible_range(19, 20), 9..20);
+    }
+
+    #[test]
+    fn change_mode_and_quit_rows_remain_visible_and_distinct() {
+        let settings = crate::persistence::GameSettings::default();
+        let change_mode = settings_text_with_bindings(&settings, 18, [1280, 720], false, 0, false);
+        assert!(change_mode
+            .vertices
+            .iter()
+            .any(|vertex| vertex.color == [1.0, 0.65, 0.24, 1.0]));
+
+        let quit_game = settings_text_with_bindings(&settings, 19, [1280, 720], false, 0, false);
+        assert!(quit_game
+            .vertices
+            .iter()
+            .any(|vertex| vertex.color == [1.0, 0.48, 0.38, 1.0]));
     }
 
     #[test]
@@ -2384,7 +2415,11 @@ mod tests {
 
     #[test]
     fn resume_and_quit_highlights_cover_the_full_text_height() {
-        for (selected, expected_min_y, expected_max_y) in [(0, 0.44, 0.50), (18, -0.51, -0.45)] {
+        for (selected, expected_min_y, expected_max_y, color) in [
+            (0, 0.44, 0.50, [0.92, 0.48, 0.16, 0.22]),
+            (18, -0.41, -0.36, [0.92, 0.48, 0.16, 0.22]),
+            (19, -0.51, -0.45, [0.88, 0.22, 0.16, 0.23]),
+        ] {
             let mut mesh = crate::Scene {
                 vertices: Vec::new(),
                 indices: Vec::new(),
@@ -2398,7 +2433,7 @@ mod tests {
             let selected_row = mesh
                 .vertices
                 .iter()
-                .filter(|vertex| vertex.color == [0.92, 0.48, 0.16, 0.22])
+                .filter(|vertex| vertex.color == color)
                 .collect::<Vec<_>>();
             let min_y = selected_row
                 .iter()
