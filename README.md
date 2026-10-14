@@ -142,6 +142,18 @@ CSV and prints average FPS, 1% low, and p99 on exit:
 cargo run --release --features bench -- --fps-log results/game-perf.csv
 ```
 
+`--perf` runs the real game with a fixed condition and writes frame statistics
+automatically, without manual play:
+
+```sh
+cargo run --release --features bench -- --perf \
+  --bots 10 --width 1280 --height 720 --activity fire --seconds 30 --output results/game-perf
+```
+
+Options: `--bots 1..20`, `--width`/`--height`, `--warmup`, `--seconds`,
+`--vsync on|off`, `--activity static|move|fire`, `--mode free|tracking`,
+`--output PATH`.
+
 GPU integration tests are ignored during a normal `cargo test` run. To run them
 on a machine with a supported GPU:
 

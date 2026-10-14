@@ -22,6 +22,7 @@
 - macOS: Metal HUD（`MTL_HUD_ENABLED=1 ./liteweight-fps`）、Instruments（Time Profiler / Metal System Trace）、Activity Monitor。
 - メモリ: 各OSの標準ツール。起動時間: プロセス開始からタイトル表示まで。
 - 内蔵ログ（ゲーム本体）: `cargo run --release --features bench -- --fps-log results/game-perf.csv`。ゲームプレイ中のフレーム間隔をCSVに記録し、終了時に平均FPS・1% Low・p99を標準出力へ表示する（`bench` feature が必要）。条件（BOT数・解像度・状態）はゲーム内設定で整えてから計測する。
+- 自動条件実行（ゲーム本体）: `cargo run --release --features bench -- --perf --bots 10 --width 1280 --height 720 --activity fire --seconds 30 --output results/game-perf`。指定条件でセッションを自動開始し、合成入力（static/move/fire）で `warmup + seconds` の間実行して、フレーム統計をJSON/CSVに保存して自動終了する。人の操作に依存せず条件を揃えられるため、パッチ間・機種間の比較に使う。`--mode free|tracking`、`--vsync on|off` も指定可能。
 
 ### 1.2 条件
 

@@ -1,8 +1,6 @@
 use glam::Vec3;
 use liteweight_fps::persistence::{BindingAction, BindingKey, GameSettings};
 use liteweight_fps::ui::menu::{PauseMenuAction, PauseSelection, TitleMenuAction, TitleSelection};
-#[cfg(feature = "bench")]
-use liteweight_fps::FpsLog;
 use liteweight_fps::{
     engine::{
         audio::{Audio, Sound},
@@ -19,6 +17,8 @@ use liteweight_fps::{
     },
     world, Options, Run,
 };
+#[cfg(feature = "bench")]
+use liteweight_fps::{FpsLog, PerfMode, PerfOptions, PerfRun};
 use std::{
     sync::Arc,
     time::{Duration, Instant},
@@ -119,6 +119,8 @@ struct App {
     fps_log: Option<FpsLog>,
     #[cfg(feature = "bench")]
     fps_log_path: String,
+    #[cfg(feature = "bench")]
+    perf: Option<PerfRun>,
     smoke: bool,
     smoke_step: usize,
     smoke_started: Option<Instant>,
@@ -229,6 +231,10 @@ impl App {
     fn finish(&mut self, event_loop: &ActiveEventLoop, completed: bool) {
         if let Some(run) = &mut self.benchmark {
             run.save(completed);
+        }
+        #[cfg(feature = "bench")]
+        if let Some(perf) = &mut self.perf {
+            perf.save(completed);
         }
         #[cfg(feature = "bench")]
         if let Some(log) = &self.fps_log {
@@ -364,6 +370,16 @@ impl App {
         self.session
             .infinite_ammo_enabled(self.settings.infinite_ammo)
     }
+    fn perf_active(&self) -> bool {
+        #[cfg(feature = "bench")]
+        {
+            self.perf.is_some()
+        }
+        #[cfg(not(feature = "bench"))]
+        {
+            false
+        }
+    }
     fn apply_runtime_setting(&mut self, setting: usize) {
         match setting {
             3 | 4 | 6 | 7 | 8 => {
@@ -496,12 +512,12 @@ impl ApplicationHandler for App {
         };
         let mut attributes = Window::default_attributes()
             .with_title("liteweight-fps")
-            .with_resizable(self.benchmark.is_none())
+            .with_resizable(self.benchmark.is_none() && !self.perf_active())
             .with_inner_size(LogicalSize::new(
                 f64::from(window_width),
                 f64::from(window_height),
             ));
-        if self.benchmark.is_none() && self.settings.fullscreen {
+        if self.benchmark.is_none() && self.settings.fullscreen && !self.perf_active() {
             attributes = attributes.with_fullscreen(Some(Fullscreen::Borderless(None)));
         }
         let window = match event_loop.create_window(attributes) {
@@ -511,12 +527,30 @@ impl ApplicationHandler for App {
                 return;
             }
         };
+        #[cfg(feature = "bench")]
+        let perf_scene = self.perf.as_ref().map(|perf| {
+            let mesh = match perf.options.mode {
+                PerfMode::Tracking => world::tracking_range(),
+                PerfMode::Free => {
+                    world::arena_scaled(world::arena_scale_for_bot_count(perf.options.bots))
+                }
+            };
+            (
+                mesh,
+                (perf.options.width, perf.options.height),
+                perf.options.vsync,
+            )
+        });
+        #[cfg(not(feature = "bench"))]
+        let perf_scene: Option<(liteweight_fps::Scene, (u32, u32), bool)> = None;
         let (mesh, internal, vsync) = if let Some(run) = &self.benchmark {
             (
                 liteweight_fps::scene(run.options.dummies),
                 (run.options.width, run.options.height),
                 run.options.vsync,
             )
+        } else if let Some(value) = perf_scene {
+            value
         } else {
             (
                 world::arena_scaled(world::arena_scale_for_bot_count(self.settings.bot_count)),
@@ -536,17 +570,21 @@ impl ApplicationHandler for App {
                     run.set_initial_display(size.width, size.height);
                 }
                 if self.benchmark.is_none() {
-                    let size = r.window.inner_size();
-                    if let Err(error) =
-                        r.resize_follow_display_aspect(size, self.settings.render_scale())
-                    {
-                        self.fail(event_loop, error);
-                        return;
+                    if self.perf_active() {
+                        r.prepare_text();
+                    } else {
+                        let size = r.window.inner_size();
+                        if let Err(error) =
+                            r.resize_follow_display_aspect(size, self.settings.render_scale())
+                        {
+                            self.fail(event_loop, error);
+                            return;
+                        }
+                        r.prepare_text();
                     }
-                    r.prepare_text();
                 }
                 self.renderer = Some(r);
-                if self.benchmark.is_none() {
+                if self.benchmark.is_none() && !self.perf_active() {
                     match Audio::new() {
                         Ok(mut audio) => {
                             audio.set_volume(self.settings.volume);
@@ -554,6 +592,23 @@ impl ApplicationHandler for App {
                         }
                         Err(e) => self.set_notice("AUDIO UNAVAILABLE - GAME WILL BE SILENT", &e),
                     }
+                }
+                #[cfg(feature = "bench")]
+                let perf_setup = self.perf.as_ref().map(|perf| {
+                    (
+                        perf.options.bots,
+                        match perf.options.mode {
+                            PerfMode::Free => SessionMode::FreeTraining,
+                            PerfMode::Tracking => SessionMode::TrackingAim,
+                        },
+                    )
+                });
+                #[cfg(feature = "bench")]
+                if let Some((bots, mode)) = perf_setup {
+                    self.settings.bot_count = bots;
+                    self.begin_session(mode);
+                    self.capture_requested = false;
+                    self.release_capture();
                 }
                 self.smoke_started = Some(Instant::now());
                 if self.benchmark.is_some() {
@@ -921,7 +976,16 @@ impl ApplicationHandler for App {
                 let dt = now.duration_since(self.clock).as_secs_f64();
                 self.clock = now;
                 let gameplay_active = !self.title_screen && !self.settings_menu;
-                if Input::should_simulate_gameplay(gameplay_active, self.window_focused)
+                #[cfg(feature = "bench")]
+                if let Some(perf) = &self.perf {
+                    let (forward, dash, fire) = perf.activity_input();
+                    self.input.forward = forward;
+                    self.input.dash = dash;
+                    self.fire_input.ads = false;
+                    self.fire_input.set_trigger(fire);
+                }
+                if (Input::should_simulate_gameplay(gameplay_active, self.window_focused)
+                    || self.perf_active())
                     && self.benchmark.is_none()
                 {
                     if std::mem::take(&mut self.fire_input.reload)
@@ -1101,6 +1165,13 @@ impl ApplicationHandler for App {
                                 self.finish(event_loop, true);
                             }
                         }
+                        #[cfg(feature = "bench")]
+                        {
+                            let done = self.perf.as_mut().is_some_and(|perf| perf.record(now));
+                            if done {
+                                self.finish(event_loop, true);
+                            }
+                        }
                     }
                     Ok(false) => {}
                     Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
@@ -1208,14 +1279,20 @@ fn main() {
     let start = Instant::now();
     let args: Vec<_> = std::env::args().skip(1).collect();
     if args == ["--help"] {
-        println!("liteweight-fps: タイトル画面でFree TrainingまたはTracking Aimを選択。\nWASD:移動 Shift:ダッシュ Space:ジャンプ LMB:射撃 RMB:ADS R:リロード Esc:ポーズ（メニューから再開・終了）\n--smoke: 自動リサイズ確認後に終了\n--benchmark [M0と同じ引数]: M0シーンで描画基盤の回帰測定（--mode inputは非対応）\n--fps-log PATH: 実プレイ中のフレーム間隔をCSVに記録（--features bench ビルド時のみ）\n1/2/3:拳銃/AR/スナイパー切替 LMB:射撃 RMB:ADS R:リロード");
+        println!("liteweight-fps: タイトル画面でFree TrainingまたはTracking Aimを選択。\nWASD:移動 Shift:ダッシュ Space:ジャンプ LMB:射撃 RMB:ADS R:リロード Esc:ポーズ（メニューから再開・終了）\n--smoke: 自動リサイズ確認後に終了\n--benchmark [M0と同じ引数]: M0シーンで描画基盤の回帰測定（--mode inputは非対応）\n--fps-log PATH: 実プレイ中のフレーム間隔をCSVに記録（--features bench ビルド時のみ）\n--perf [--bots N --width W --height H --warmup S --seconds S --vsync on|off --activity static|move|fire --mode free|tracking --output PATH]: 条件を自動実行して計測（--features bench ビルド時のみ）\n1/2/3:拳銃/AR/スナイパー切替 LMB:射撃 RMB:ADS R:リロード");
         return;
     }
     let smoke = args == ["--smoke"];
     let fps_log_requested = args.len() == 2 && args[0] == "--fps-log";
+    let perf_requested = args.first().is_some_and(|a| a == "--perf");
     #[cfg(not(feature = "bench"))]
     if fps_log_requested {
         eprintln!("--fps-log は --features bench を付けてビルドした場合のみ使用できます");
+        std::process::exit(2);
+    }
+    #[cfg(not(feature = "bench"))]
+    if perf_requested {
+        eprintln!("--perf は --features bench を付けてビルドした場合のみ使用できます");
         std::process::exit(2);
     }
     let options = if args.first().is_some_and(|a| a == "--benchmark") {
@@ -1231,11 +1308,20 @@ fn main() {
             options.output = "results/m2-benchmark".into();
         }
         Some(options)
-    } else if args.is_empty() || smoke || fps_log_requested {
+    } else if args.is_empty() || smoke || fps_log_requested || perf_requested {
         None
     } else {
         eprintln!("不正な引数。--helpを参照してください");
         std::process::exit(2);
+    };
+    #[cfg(feature = "bench")]
+    let perf_options = if perf_requested {
+        Some(PerfOptions::parse(&args[1..]).unwrap_or_else(|e| {
+            eprintln!("{e}");
+            std::process::exit(2);
+        }))
+    } else {
+        None
     };
     let mut builder = EventLoop::builder();
     #[cfg(target_os = "linux")]
@@ -1253,7 +1339,7 @@ fn main() {
         }
     }
     let event_loop = builder.build().expect("event loop");
-    let title_screen = !smoke && options.is_none();
+    let title_screen = !smoke && options.is_none() && !perf_requested;
     let settings = GameSettings::load();
     let tracking_bot_count = settings.bot_count.min(5);
     let arena_scale = world::arena_scale_for_bot_count(settings.bot_count);
@@ -1269,6 +1355,8 @@ fn main() {
         },
         text_mesh: liteweight_fps::engine::text::TextMesh::default(),
         benchmark: options.map(|o| Run::new(o, start, String::new())),
+        #[cfg(feature = "bench")]
+        perf: perf_options.map(|o| PerfRun::new(o, start)),
         #[cfg(feature = "bench")]
         fps_log: fps_log_requested.then(FpsLog::new),
         #[cfg(feature = "bench")]

@@ -491,4 +491,308 @@ mod fps_log_tests {
     }
 }
 
+/// Synthetic input profile for the automated gameplay performance mode.
+#[cfg(feature = "bench")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PerfActivity {
+    Static,
+    Move,
+    Fire,
+}
+
+/// Gameplay mode used by the automated performance run.
+#[cfg(feature = "bench")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PerfMode {
+    Free,
+    Tracking,
+}
+
+/// Conditions for `--perf`, the automated gameplay performance run.
+#[cfg(feature = "bench")]
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct PerfOptions {
+    pub width: u32,
+    pub height: u32,
+    pub bots: u32,
+    pub warmup: f64,
+    pub seconds: f64,
+    pub vsync: bool,
+    pub activity: PerfActivity,
+    pub mode: PerfMode,
+    pub output: String,
+}
+#[cfg(feature = "bench")]
+impl PerfOptions {
+    pub fn parse(args: &[String]) -> Result<Self, String> {
+        let mut options = Self {
+            width: 1280,
+            height: 720,
+            bots: 5,
+            warmup: 5.,
+            seconds: 30.,
+            vsync: true,
+            activity: PerfActivity::Static,
+            mode: PerfMode::Free,
+            output: "results/game-perf".into(),
+        };
+        if !args.len().is_multiple_of(2) {
+            return Err("オプションには値が必要です".into());
+        }
+        for pair in args.as_chunks::<2>().0 {
+            let value = &pair[1];
+            let invalid = || format!("不正な引数: {} {}", pair[0], value);
+            match pair[0].as_str() {
+                "--width" => options.width = value.parse().map_err(|_| invalid())?,
+                "--height" => options.height = value.parse().map_err(|_| invalid())?,
+                "--bots" => options.bots = value.parse().map_err(|_| invalid())?,
+                "--warmup" => options.warmup = value.parse().map_err(|_| invalid())?,
+                "--seconds" => options.seconds = value.parse().map_err(|_| invalid())?,
+                "--vsync" => {
+                    options.vsync = match value.as_str() {
+                        "on" => true,
+                        "off" => false,
+                        _ => return Err(invalid()),
+                    }
+                }
+                "--activity" => {
+                    options.activity = match value.as_str() {
+                        "static" => PerfActivity::Static,
+                        "move" => PerfActivity::Move,
+                        "fire" => PerfActivity::Fire,
+                        _ => return Err(invalid()),
+                    }
+                }
+                "--mode" => {
+                    options.mode = match value.as_str() {
+                        "free" => PerfMode::Free,
+                        "tracking" => PerfMode::Tracking,
+                        _ => return Err(invalid()),
+                    }
+                }
+                "--output" => options.output.clone_from(value),
+                _ => return Err(invalid()),
+            }
+        }
+        if !(64..=3840).contains(&options.width)
+            || !(64..=2160).contains(&options.height)
+            || !(1..=20).contains(&options.bots)
+            || !options.warmup.is_finite()
+            || !(0.0..=60.0).contains(&options.warmup)
+            || !options.seconds.is_finite()
+            || !(1.0..=600.0).contains(&options.seconds)
+            || options.output.is_empty()
+        {
+            return Err(
+                "幅64〜3840、高さ64〜2160、bots 1〜20、warmup 0〜60、seconds 1〜600を指定してください"
+                    .into(),
+            );
+        }
+        Ok(options)
+    }
+    /// Returns `(forward, dash, fire)` for the selected activity.
+    pub fn activity_input(&self) -> (bool, bool, bool) {
+        match self.activity {
+            PerfActivity::Static => (false, false, false),
+            PerfActivity::Move => (true, true, false),
+            PerfActivity::Fire => (false, false, true),
+        }
+    }
+}
+
+/// Runs the actual game with a fixed condition and records frame statistics.
+#[cfg(feature = "bench")]
+pub struct PerfRun {
+    pub options: PerfOptions,
+    measurement: Measurement,
+    start: Instant,
+    first_present: Option<Instant>,
+    previous_present: Option<Instant>,
+    startup_ms: Option<f64>,
+    saved: bool,
+    memory_system: sysinfo::System,
+    memory: Vec<(f64, u64)>,
+    last_memory: Option<Instant>,
+}
+#[cfg(feature = "bench")]
+impl PerfRun {
+    pub fn new(options: PerfOptions, start: Instant) -> Self {
+        let measurement = Measurement::new(
+            options.warmup,
+            options.seconds,
+            (options.width, options.height),
+        );
+        Self {
+            options,
+            measurement,
+            start,
+            first_present: None,
+            previous_present: None,
+            startup_ms: None,
+            saved: false,
+            memory_system: sysinfo::System::new(),
+            memory: Vec::new(),
+            last_memory: None,
+        }
+    }
+    pub fn activity_input(&self) -> (bool, bool, bool) {
+        self.options.activity_input()
+    }
+    /// Records a presented frame; returns true once the run duration elapsed.
+    pub fn record(&mut self, cpu_start: Instant) -> bool {
+        let now = Instant::now();
+        let cpu_ms = now.duration_since(cpu_start).as_secs_f64() * 1000.;
+        let first = *self.first_present.get_or_insert_with(|| {
+            self.startup_ms = Some(now.duration_since(self.start).as_secs_f64() * 1000.);
+            now
+        });
+        let elapsed = now.duration_since(first).as_secs_f64();
+        if let Some(previous) = self.previous_present.replace(now) {
+            self.measurement.record(
+                previous.duration_since(first).as_secs_f64(),
+                elapsed,
+                cpu_ms,
+            );
+        }
+        if elapsed >= self.options.warmup
+            && self
+                .last_memory
+                .is_none_or(|t| now.duration_since(t).as_secs_f64() >= 1.)
+        {
+            if let Ok(pid) = sysinfo::get_current_pid() {
+                self.memory_system.refresh_processes_specifics(
+                    sysinfo::ProcessesToUpdate::Some(&[pid]),
+                    true,
+                    sysinfo::ProcessRefreshKind::nothing().with_memory(),
+                );
+                if let Some(p) = self.memory_system.process(pid) {
+                    self.memory.push((elapsed, p.memory()));
+                }
+            }
+            self.last_memory = Some(now);
+        }
+        elapsed >= self.options.warmup + self.options.seconds
+    }
+    pub fn save(&mut self, completed: bool) {
+        if self.saved {
+            return;
+        }
+        self.saved = true;
+        if let Err(e) = self.write(completed) {
+            eprintln!("性能計測の保存失敗: {e}");
+            std::process::exit(1);
+        }
+    }
+    fn write(&self, completed: bool) -> Result<(), Box<dyn std::error::Error>> {
+        let path = std::path::PathBuf::from(format!("{}.json", self.options.output));
+        if let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
+            std::fs::create_dir_all(parent)?;
+        }
+        let samples: Vec<_> = self
+            .measurement
+            .frames
+            .iter()
+            .map(|f| f.interval_ms)
+            .collect();
+        let cpu: Vec<_> = self
+            .measurement
+            .frames
+            .iter()
+            .map(|f| f.cpu_submit_ms)
+            .collect();
+        let report = serde_json::json!({
+            "schema": 1, "scene": "gameplay", "backend": null,
+            "os": std::env::consts::OS, "arch": std::env::consts::ARCH,
+            "release": !cfg!(debug_assertions), "options": self.options,
+            "completed": completed,
+            "comparison_valid": self.measurement.valid && completed && !cfg!(debug_assertions) && !samples.is_empty(),
+            "frame_count": samples.len(), "frame_statistics": stats(&samples),
+            "cpu_submit_mean_ms": (!cpu.is_empty()).then(|| cpu.iter().sum::<f64>() / cpu.len() as f64),
+            "startup_to_first_submit_return_ms": self.startup_ms,
+            "rss_samples_bytes": self.memory, "rss_sampled_max_bytes": self.memory.iter().map(|x| x.1).max(),
+            "display_pixels_initial": self.measurement.size, "display_pixels_final": self.measurement.actual_size,
+        });
+        std::fs::write(&path, serde_json::to_vec_pretty(&report)?)?;
+        let mut csv = std::io::BufWriter::new(std::fs::File::create(format!(
+            "{}.csv",
+            self.options.output
+        ))?);
+        writeln!(csv, "elapsed_seconds,frame_interval_ms,cpu_submit_ms")?;
+        for f in &self.measurement.frames {
+            writeln!(
+                csv,
+                "{:.9},{:.9},{:.9}",
+                f.elapsed, f.interval_ms, f.cpu_submit_ms
+            )?;
+        }
+        csv.flush()?;
+        println!("保存: {} ({} frames)", path.display(), samples.len());
+        Ok(())
+    }
+}
+
+#[cfg(all(test, feature = "bench"))]
+mod perf_options_tests {
+    use super::{PerfActivity, PerfMode, PerfOptions};
+
+    fn args(values: &[&str]) -> Vec<String> {
+        values.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn perf_options_use_defaults_and_parse_activity_and_mode() {
+        let default = PerfOptions::parse(&[]).unwrap();
+        assert_eq!(
+            (default.width, default.height, default.bots),
+            (1280, 720, 5)
+        );
+        assert_eq!(default.activity, PerfActivity::Static);
+        assert_eq!(default.mode, PerfMode::Free);
+
+        let parsed = PerfOptions::parse(&args(&[
+            "--bots",
+            "20",
+            "--activity",
+            "fire",
+            "--mode",
+            "tracking",
+            "--vsync",
+            "off",
+        ]))
+        .unwrap();
+        assert_eq!(parsed.bots, 20);
+        assert_eq!(parsed.activity, PerfActivity::Fire);
+        assert_eq!(parsed.mode, PerfMode::Tracking);
+        assert!(!parsed.vsync);
+    }
+
+    #[test]
+    fn perf_options_reject_invalid_values() {
+        for bad in [
+            vec!["--bots", "0"],
+            vec!["--width", "0"],
+            vec!["--seconds", "0"],
+            vec!["--activity", "jump"],
+            vec!["--mode", "arena"],
+            vec!["--wat", "1"],
+            vec!["--bots"],
+        ] {
+            assert!(PerfOptions::parse(&args(&bad)).is_err(), "{bad:?}");
+        }
+    }
+
+    #[test]
+    fn perf_activity_maps_to_synthetic_input() {
+        let mut options = PerfOptions::parse(&[]).unwrap();
+        options.activity = PerfActivity::Static;
+        assert_eq!(options.activity_input(), (false, false, false));
+        options.activity = PerfActivity::Move;
+        assert_eq!(options.activity_input(), (true, true, false));
+        options.activity = PerfActivity::Fire;
+        assert_eq!(options.activity_input(), (false, false, true));
+    }
+}
+
 pub mod ui;
