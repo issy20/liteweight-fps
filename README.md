@@ -45,6 +45,8 @@ The sniper scope moves into alignment progressively. During ADS, the scope
 opening grows and the area outside it darkens smoothly. Weapon switching has a
 draw transition that lowers the old weapon before raising the new one.
 
+![Aiming down sights in Free Training](docs/images/gameplay.jpg)
+
 ## Install
 
 The game is distributed as source. You build it locally with the Rust stable
@@ -205,8 +207,8 @@ cargo run --release --features bench -- --perf \
 ```
 
 Options: `--bots 1..20`, `--width`/`--height`, `--warmup`, `--seconds`,
-`--vsync on|off`, `--activity static|move|fire`, `--mode free|tracking`,
-`--output PATH`.
+`--vsync on|off`, `--recoil on|off`, `--ads on|off`, `--weapon pistol|ar|sniper`,
+`--activity static|move|fire`, `--mode free|tracking`, `--output PATH`.
 
 GPU integration tests are ignored during a normal `cargo test` run. To run them
 on a machine with a supported GPU:
