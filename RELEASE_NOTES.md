@@ -4,7 +4,7 @@ This is the first packaged preview of the offline single-player BOT training FPS
 
 ## Included
 
-- Free Training and a five-minute challenge with local results.
+- Free Training and Tracking Aim practice modes.
 - First-person movement, mouse look, sprinting, jumping, and collision with the arena.
 - Three original weapons with ADS, recoil, firing, reload, and weapon switching.
 - Static, strafing, and chasing BOT targets with configurable population and behavior.

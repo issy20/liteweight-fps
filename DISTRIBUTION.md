@@ -31,10 +31,10 @@ GitHub Actionsの「Release packages」workflowを手動実行すると、4タ�
 
 現行の性能は未測定です。内蔵GPUでの快適動作や最低FPSを示す表示・宣伝には使わないでください。
 
-ゲーム設定と結果は実行ファイルの隣ではなく、OSのユーザー設定領域に保存されます。
+ゲーム設定は実行ファイルの隣ではなく、OSのユーザー設定領域に保存されます。
 
 - Windows: `%APPDATA%\liteweight-fps\`
 - macOS: `~/Library/Application Support/liteweight-fps/`
 - Linux: `${XDG_CONFIG_HOME:-~/.config}/liteweight-fps/`
 
-`settings.json`は設定、`results.json`はチャレンジ結果です。
+`settings.json`に設定を保存します。
