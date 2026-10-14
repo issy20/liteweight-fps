@@ -528,7 +528,7 @@ fn sniper_ads_progress_moves_in_and_out_smoothly() {
     let mut loadout = Loadout::default();
     loadout.switch(WeaponKind::Sniper);
     loadout.advance(0.32, false);
-    loadout.advance(0.25, true);
+    loadout.advance(0.2, true);
     assert!((loadout.active().ads_progress - 0.5).abs() < 1e-5);
     loadout.advance(0.1, false);
     assert!(loadout.active().ads_progress < 0.5);
@@ -591,14 +591,14 @@ fn sniper_quick_shot_alignment_is_usable_before_half_ads() {
 }
 
 #[test]
-fn sniper_scope_fov_moves_smoothly_from_70_to_20_degrees_over_500ms() {
+fn sniper_scope_fov_moves_smoothly_from_70_to_20_degrees_over_400ms() {
     let mut loadout = Loadout::default();
     loadout.switch(WeaponKind::Sniper);
     loadout.advance(0.32, false);
     assert_eq!(loadout.fov(), 70.);
-    loadout.advance(0.425, true);
+    loadout.advance(0.34, true);
     assert!((loadout.fov() - 27.5).abs() < 1e-3);
-    loadout.advance(0.075, true);
+    loadout.advance(0.06, true);
     assert!((loadout.fov() - 20.).abs() < 1e-5);
 }
 
@@ -609,16 +609,18 @@ fn sniper_bolt_blocks_next_shot_and_keeps_progress_when_switched_away() {
     loadout.advance(0.32, false);
     assert!(loadout.fire(true, true));
     assert!(!loadout.fire(true, true));
-    loadout.advance(0.6, false);
+    loadout.advance(0.5, false);
     let remaining = loadout.active().bolt_remaining;
     assert!(remaining > 0.0);
     loadout.switch(WeaponKind::Pistol);
-    loadout.advance(0.3, false);
+    loadout.advance(0.4, false);
     loadout.switch(WeaponKind::Sniper);
     assert!(loadout.active().bolt_remaining < remaining);
     assert!(!loadout.fire(true, true));
-    loadout.advance(0.4, false);
+    loadout.advance(0.1, false);
     assert!(loadout.active().bolt_remaining == 0.0);
+    // The sniper's 50 RPM fire interval (1.2s) remains longer than the bolt cycle.
+    loadout.advance(0.22, false);
     assert!(loadout.fire(true, true));
 }
 

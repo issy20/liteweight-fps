@@ -111,8 +111,9 @@ pub const PISTOL: WeaponData = WeaponData {
     bolt_seconds: 0.0,
     hip_fire_spread_radians: 0.015,
 };
-pub const SNIPER_ADS_IN_SECONDS: f32 = 0.50;
+pub const SNIPER_ADS_IN_SECONDS: f32 = 0.40;
 pub const SNIPER_ADS_OUT_SECONDS: f32 = 0.20;
+pub const SNIPER_BOLT_SECONDS: f32 = 1.0;
 const SNIPER_HIP_ALIGNMENT_RADIANS: f32 = 4.0_f32.to_radians();
 const SNIPER_ALIGNMENT_REMAINING_EXPONENT: f32 = 2.5;
 pub const SNIPER: WeaponData = WeaponData {
@@ -124,7 +125,7 @@ pub const SNIPER: WeaponData = WeaponData {
     ads_out_seconds: SNIPER_ADS_OUT_SECONDS,
     recoil_kick: 0.075,
     mode: FireMode::BoltAction,
-    bolt_seconds: 1.2,
+    bolt_seconds: SNIPER_BOLT_SECONDS,
     hip_fire_spread_radians: 0.010,
 };
 
