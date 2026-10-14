@@ -21,6 +21,7 @@
 - Linux: MangoHud（`MANGOHUD=1 ./liteweight-fps`）、VSync無効化に `vblank_mode=0`。GPU使用率は `intel_gpu_top`／`nvtop`。
 - macOS: Metal HUD（`MTL_HUD_ENABLED=1 ./liteweight-fps`）、Instruments（Time Profiler / Metal System Trace）、Activity Monitor。
 - メモリ: 各OSの標準ツール。起動時間: プロセス開始からタイトル表示まで。
+- 内蔵ログ（ゲーム本体）: `cargo run --release --features bench -- --fps-log results/game-perf.csv`。ゲームプレイ中のフレーム間隔をCSVに記録し、終了時に平均FPS・1% Low・p99を標準出力へ表示する（`bench` feature が必要）。条件（BOT数・解像度・状態）はゲーム内設定で整えてから計測する。
 
 ### 1.2 条件
 

@@ -403,4 +403,92 @@ impl Run {
     }
 }
 
+/// Records gameplay frame intervals and reports FPS statistics. Enabled by the
+/// `bench` feature; used by the `--fps-log` flag for game performance runs.
+#[cfg(feature = "bench")]
+#[derive(Default)]
+pub struct FpsLog {
+    intervals: Vec<f64>,
+    previous: Option<Instant>,
+}
+#[cfg(feature = "bench")]
+impl FpsLog {
+    pub fn new() -> Self {
+        Self::default()
+    }
+    /// Records the interval since the previous call and returns it in milliseconds.
+    pub fn record(&mut self, now: Instant) -> Option<f64> {
+        let interval = self
+            .previous
+            .replace(now)
+            .map(|previous| now.duration_since(previous).as_secs_f64() * 1000.0);
+        if let Some(interval) = interval {
+            self.intervals.push(interval);
+        }
+        interval
+    }
+    pub fn intervals(&self) -> &[f64] {
+        &self.intervals
+    }
+    /// Writes a per-frame CSV and prints summary statistics.
+    pub fn write(&self, path: &str) -> Result<(), Box<dyn std::error::Error>> {
+        let path = std::path::PathBuf::from(path);
+        if let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
+            std::fs::create_dir_all(parent)?;
+        }
+        let mut csv = std::io::BufWriter::new(std::fs::File::create(&path)?);
+        writeln!(csv, "frame_interval_ms")?;
+        for interval in &self.intervals {
+            writeln!(csv, "{interval:.9}")?;
+        }
+        csv.flush()?;
+        match stats(&self.intervals) {
+            Some(summary) => println!(
+                "fps log: {} frames, avg {:.2} FPS, 1% low {:.2} FPS, p99 {:.3} ms -> {}",
+                self.intervals.len(),
+                summary.average_fps,
+                summary.one_percent_low_fps,
+                summary.p99_ms,
+                path.display()
+            ),
+            None => println!("fps log: no samples -> {}", path.display()),
+        }
+        Ok(())
+    }
+}
+
+#[cfg(all(test, feature = "bench"))]
+mod fps_log_tests {
+    use super::FpsLog;
+    use std::time::{Duration, Instant};
+
+    #[test]
+    fn fps_log_records_intervals_between_calls() {
+        let mut log = FpsLog::new();
+        let start = Instant::now();
+        assert!(log.record(start).is_none());
+        let first = log.record(start + Duration::from_millis(10)).unwrap();
+        assert!((first - 10.0).abs() < 1e-6);
+        let second = log.record(start + Duration::from_millis(30)).unwrap();
+        assert!((second - 20.0).abs() < 1e-6);
+        assert_eq!(log.intervals(), &[first, second]);
+    }
+
+    #[test]
+    fn fps_log_writes_one_csv_row_per_interval() {
+        let mut log = FpsLog::new();
+        let start = Instant::now();
+        log.record(start);
+        log.record(start + Duration::from_millis(16));
+        log.record(start + Duration::from_millis(32));
+        let path =
+            std::env::temp_dir().join(format!("liteweight-fps-fpslog-{}.csv", std::process::id()));
+        log.write(path.to_str().unwrap()).unwrap();
+        let contents = std::fs::read_to_string(&path).unwrap();
+        assert_eq!(contents.lines().count(), 3);
+        assert!(contents.starts_with("frame_interval_ms\n"));
+        std::fs::remove_file(path).unwrap();
+    }
+}
+
 pub mod ui;

@@ -1,6 +1,8 @@
 use glam::Vec3;
 use liteweight_fps::persistence::{BindingAction, BindingKey, GameSettings};
 use liteweight_fps::ui::menu::{PauseMenuAction, PauseSelection, TitleMenuAction, TitleSelection};
+#[cfg(feature = "bench")]
+use liteweight_fps::FpsLog;
 use liteweight_fps::{
     engine::{
         audio::{Audio, Sound},
@@ -113,6 +115,10 @@ struct App {
     hud_mesh: liteweight_fps::Scene,
     text_mesh: liteweight_fps::engine::text::TextMesh,
     benchmark: Option<Run>,
+    #[cfg(feature = "bench")]
+    fps_log: Option<FpsLog>,
+    #[cfg(feature = "bench")]
+    fps_log_path: String,
     smoke: bool,
     smoke_step: usize,
     smoke_started: Option<Instant>,
@@ -223,6 +229,12 @@ impl App {
     fn finish(&mut self, event_loop: &ActiveEventLoop, completed: bool) {
         if let Some(run) = &mut self.benchmark {
             run.save(completed);
+        }
+        #[cfg(feature = "bench")]
+        if let Some(log) = &self.fps_log {
+            if let Err(error) = log.write(&self.fps_log_path) {
+                eprintln!("fps log 保存失敗: {error}");
+            }
         }
         event_loop.exit();
     }
@@ -1078,6 +1090,12 @@ impl ApplicationHandler for App {
                 };
                 match r.render(matrix) {
                     Ok(true) => {
+                        #[cfg(feature = "bench")]
+                        if gameplay_active {
+                            if let Some(log) = &mut self.fps_log {
+                                log.record(now);
+                            }
+                        }
                         if let Some(run) = &mut self.benchmark {
                             if run.presented(now) {
                                 self.finish(event_loop, true);
@@ -1190,10 +1208,16 @@ fn main() {
     let start = Instant::now();
     let args: Vec<_> = std::env::args().skip(1).collect();
     if args == ["--help"] {
-        println!("liteweight-fps: タイトル画面でFree TrainingまたはTracking Aimを選択。\nWASD:移動 Shift:ダッシュ Space:ジャンプ LMB:射撃 RMB:ADS R:リロード Esc:ポーズ（メニューから再開・終了）\n--smoke: 自動リサイズ確認後に終了\n--benchmark [M0と同じ引数]: M0シーンで描画基盤の回帰測定（--mode inputは非対応）\n1/2/3:拳銃/AR/スナイパー切替 LMB:射撃 RMB:ADS R:リロード");
+        println!("liteweight-fps: タイトル画面でFree TrainingまたはTracking Aimを選択。\nWASD:移動 Shift:ダッシュ Space:ジャンプ LMB:射撃 RMB:ADS R:リロード Esc:ポーズ（メニューから再開・終了）\n--smoke: 自動リサイズ確認後に終了\n--benchmark [M0と同じ引数]: M0シーンで描画基盤の回帰測定（--mode inputは非対応）\n--fps-log PATH: 実プレイ中のフレーム間隔をCSVに記録（--features bench ビルド時のみ）\n1/2/3:拳銃/AR/スナイパー切替 LMB:射撃 RMB:ADS R:リロード");
         return;
     }
     let smoke = args == ["--smoke"];
+    let fps_log_requested = args.len() == 2 && args[0] == "--fps-log";
+    #[cfg(not(feature = "bench"))]
+    if fps_log_requested {
+        eprintln!("--fps-log は --features bench を付けてビルドした場合のみ使用できます");
+        std::process::exit(2);
+    }
     let options = if args.first().is_some_and(|a| a == "--benchmark") {
         let mut options = Options::parse(&args[1..]).unwrap_or_else(|e| {
             eprintln!("{e}");
@@ -1207,7 +1231,7 @@ fn main() {
             options.output = "results/m2-benchmark".into();
         }
         Some(options)
-    } else if args.is_empty() || smoke {
+    } else if args.is_empty() || smoke || fps_log_requested {
         None
     } else {
         eprintln!("不正な引数。--helpを参照してください");
@@ -1245,6 +1269,14 @@ fn main() {
         },
         text_mesh: liteweight_fps::engine::text::TextMesh::default(),
         benchmark: options.map(|o| Run::new(o, start, String::new())),
+        #[cfg(feature = "bench")]
+        fps_log: fps_log_requested.then(FpsLog::new),
+        #[cfg(feature = "bench")]
+        fps_log_path: if fps_log_requested {
+            args[1].clone()
+        } else {
+            String::new()
+        },
         smoke,
         smoke_step: 0,
         smoke_started: None,

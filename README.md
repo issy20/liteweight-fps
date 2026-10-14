@@ -135,6 +135,13 @@ sampling. Build them with:
 cargo build --locked --release --features bench --bins
 ```
 
+It also enables `--fps-log <PATH>`, which records gameplay frame intervals to a
+CSV and prints average FPS, 1% low, and p99 on exit:
+
+```sh
+cargo run --release --features bench -- --fps-log results/game-perf.csv
+```
+
 GPU integration tests are ignored during a normal `cargo test` run. To run them
 on a machine with a supported GPU:
 
