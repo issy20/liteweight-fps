@@ -45,39 +45,97 @@ The sniper scope moves into alignment progressively. During ADS, the scope
 opening grows and the area outside it darkens smoothly. Weapon switching has a
 draw transition that lowers the old weapon before raising the new one.
 
-## Run from source
+## Install
 
-The game is distributed as source. Build it locally with the Rust stable
-toolchain; no prebuilt or signed binaries are provided. See
-[Distribution](DISTRIBUTION.md) for platform requirements.
+The game is distributed as source. You build it locally with the Rust stable
+toolchain; no prebuilt or signed binaries are provided, so local builds are not
+subject to OS download warnings. See [Distribution](DISTRIBUTION.md) for
+platform requirements.
 
-1. Install the native build tools for your OS.
+### Requirements
 
-   - macOS: run `xcode-select --install`.
-   - Windows: install the MSVC Build Tools (Visual Studio "Desktop development with C++").
-   - Linux (Debian/Ubuntu):
-     ```sh
-     sudo apt install build-essential pkg-config libasound2-dev libwayland-dev libxkbcommon-dev libxkbcommon-x11-dev
-     ```
+- A 64-bit OS: Windows 10/11, Linux (X11 or Wayland), or macOS (Apple Silicon or Intel).
+- A GPU and driver (integrated graphics is the target). Audio is optional: if no
+  device is available, the game reports it and continues silently.
+- Rust stable (via [rustup](https://rustup.rs)) and the native build tools below.
 
-2. Install Rust stable:
-   ```sh
-   curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-   ```
+### 1. Native build tools
 
-3. Clone and run:
-   ```sh
-   git clone --depth 1 https://github.com/issy20/liteweight-fps.git
-   cd liteweight-fps
-   cargo run --release --locked
-   ```
+- **macOS** — Xcode Command Line Tools:
+  ```sh
+  xcode-select --install
+  ```
+- **Windows** — MSVC Build Tools (Visual Studio "Desktop development with C++"):
+  ```powershell
+  winget install --id Microsoft.VisualStudio.2022.BuildTools
+  ```
+  Then open the Visual Studio Installer and add the "Desktop development with
+  C++" workload.
+- **Linux (Debian/Ubuntu)**:
+  ```sh
+  sudo apt update
+  sudo apt install build-essential pkg-config libasound2-dev libwayland-dev libxkbcommon-dev libxkbcommon-x11-dev
+  ```
+  On other distributions, install an equivalent C toolchain, `pkg-config`, and
+  the ALSA, XKB, and Wayland development packages.
 
-The first build compiles all dependencies and takes a few minutes. The audio
-device is optional: if none is available, the game reports the reason and
-continues silently.
+### 2. Rust
 
-For convenience, `scripts/run.sh` (macOS/Linux) and `scripts/run.ps1` (Windows)
-check for Rust and run `cargo run --release --locked` for you.
+Install Rust stable and load it into the current shell:
+```sh
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+. "$HOME/.cargo/env"
+```
+On Windows, download and run `rustup-init.exe` from [rustup.rs](https://rustup.rs).
+
+### 3. Build and run
+
+```sh
+git clone --depth 1 https://github.com/issy20/liteweight-fps.git
+cd liteweight-fps
+cargo run --release --locked
+```
+
+The first build compiles all dependencies and takes a few minutes; later runs
+start immediately. For convenience, the helper script checks for Rust and runs
+the same command:
+
+```sh
+./scripts/run.sh     # macOS / Linux
+.\scripts\run.ps1    # Windows
+```
+
+### Install the executable on your PATH (optional)
+
+Build once and install the binary into `~/.cargo/bin`:
+
+```sh
+cargo install --locked --path .
+# or install straight from the repository
+cargo install --locked --git https://github.com/issy20/liteweight-fps
+```
+
+Then run `liteweight-fps` from anywhere. Remove it with
+`cargo uninstall liteweight-fps`.
+
+### Where data is stored
+
+Settings are saved per user, not next to the executable:
+
+- Windows: `%APPDATA%\liteweight-fps\`
+- macOS: `~/Library/Application Support/liteweight-fps/`
+- Linux: `${XDG_CONFIG_HOME:-~/.config}/liteweight-fps/`
+
+`settings.json` holds the game settings.
+
+### Troubleshooting
+
+- `cargo: command not found` — open a new shell, or run `. "$HOME/.cargo/env"`.
+- Linux: the window fails to open with `libxkbcommon-x11.so` — install
+  `libxkbcommon-x11-dev` and make sure X11 or Wayland is available.
+- No sound — the audio device is optional; the game shows a notice and keeps running.
+
+### Controls
 
 | Input | Action |
 | --- | --- |
@@ -108,16 +166,8 @@ Dependencies are locked in `Cargo.lock`. The M0 renderer comparison uses these
 pinned versions as its baseline; results from different library versions should
 not be mixed.
 
-On Linux, install a C compiler, `pkg-config`, ALSA development files, and the
-Wayland/XKB development libraries. For Debian or Ubuntu:
-
-```sh
-sudo apt install build-essential pkg-config libasound2-dev libwayland-dev libxkbcommon-dev libxkbcommon-x11-dev
-```
-
-On macOS, install Xcode Command Line Tools. On Windows, install the MSVC Build
-Tools. The audio device is optional at runtime: if initialization fails, the
-game reports the reason and continues silently.
+See [Install](#install) for prerequisites. The audio device is optional: if
+initialization fails, the game reports the reason and continues silently.
 
 Run formatting, lint, tests, and a release build with:
 
