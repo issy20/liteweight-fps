@@ -5,10 +5,12 @@ pub const BOT_RESPAWN_SECONDS: f32 = 2.0;
 pub const BOT_MIN_RESPAWN_DISTANCE: f32 = 8.0;
 const BOT_RADIUS: f32 = 0.36;
 const BOT_HEIGHT: f32 = 2.05;
+const BOT_COLLISION_EPSILON: f32 = 1e-6;
 const BOT_AI_INTERVAL: f32 = 1.0 / 20.0;
 const BOT_STRAFE_SPEED: f32 = 2.2;
 const BOT_CHASE_SPEED: f32 = 1.8;
-const BOT_CHASE_STOP_DISTANCE: f32 = 4.5;
+const BOT_CHASE_APPROACH_MIN_DISTANCE: f32 = 4.5;
+const BOT_CHASE_APPROACH_MAX_DISTANCE: f32 = 6.0;
 const BOT_STRAFE_ANGULAR_SPEED: f32 = 0.9;
 const TRACKING_STRAFE_MIN_STEPS: u16 = 45;
 const TRACKING_STRAFE_MAX_STEPS: u16 = 120;
@@ -89,6 +91,11 @@ pub struct Bot {
     tracking_steps_remaining: u16,
     tracking_rng: u32,
     chase_waypoint: usize,
+    chase_approach_angle: f32,
+    chase_approach_axis: Vec3,
+    chase_approach_selected: bool,
+    chase_approach_distance: f32,
+    chase_avoid_sign: f32,
     move_direction: Vec3,
     pub arena_scale: f32,
 }
@@ -116,6 +123,16 @@ impl Bot {
         } else {
             -1.0
         };
+        let chase_approach_angle =
+            (random_unit(&mut tracking_rng) * 2.0 - 1.0) * std::f32::consts::FRAC_PI_3;
+        let chase_approach_distance = BOT_CHASE_APPROACH_MIN_DISTANCE
+            + random_unit(&mut tracking_rng)
+                * (BOT_CHASE_APPROACH_MAX_DISTANCE - BOT_CHASE_APPROACH_MIN_DISTANCE);
+        let chase_avoid_sign = if next_bot_random(&mut tracking_rng).is_multiple_of(2) {
+            1.0
+        } else {
+            -1.0
+        };
         let tracking_half_width = tracking_lane_half_width(position, movement_axis);
         Self {
             position,
@@ -138,6 +155,11 @@ impl Bot {
             tracking_steps_remaining,
             tracking_rng,
             chase_waypoint: 0,
+            chase_approach_angle,
+            chase_approach_axis: Vec3::ZERO,
+            chase_approach_selected: false,
+            chase_approach_distance,
+            chase_avoid_sign,
             move_direction: match behavior {
                 BotBehavior::Strafe => movement_axis * (BOT_STRAFE_SPEED * strafe_phase.cos()),
                 BotBehavior::TrackingStrafe => {
@@ -290,7 +312,50 @@ impl Bot {
             }
             self.move_direction = self.movement_axis * (BOT_STRAFE_SPEED * self.tracking_direction);
         }
-        let mut destination = self.position + self.move_direction * (dt * self.speed_multiplier);
+        let movement = self.move_direction * (dt * self.speed_multiplier);
+        let mut destination = self.position + movement;
+        if self.behavior == BotBehavior::Chase
+            && movement.length_squared() > 1e-8
+            && self.collides(destination, index, walls, other_positions)
+        {
+            let tangent =
+                Vec3::new(-movement.z, 0.0, movement.x).normalize_or_zero() * movement.length();
+            let side_step = if tangent.x.abs() >= tangent.z.abs() {
+                Vec3::new(tangent.x * self.chase_avoid_sign, 0.0, 0.0)
+            } else {
+                Vec3::new(0.0, 0.0, tangent.z * self.chase_avoid_sign)
+            };
+            let side_candidate = self.position + side_step;
+            let preferred = self.position + tangent * self.chase_avoid_sign;
+            let alternate = self.position - tangent * self.chase_avoid_sign;
+            destination = if self.can_move_without_penetrating(
+                self.position,
+                side_candidate,
+                index,
+                walls,
+                other_positions,
+            ) {
+                side_candidate
+            } else if self.can_move_without_penetrating(
+                self.position,
+                preferred,
+                index,
+                walls,
+                other_positions,
+            ) {
+                preferred
+            } else if self.can_move_without_penetrating(
+                self.position,
+                alternate,
+                index,
+                walls,
+                other_positions,
+            ) {
+                alternate
+            } else {
+                self.position
+            };
+        }
         if self.behavior == BotBehavior::TrackingStrafe {
             let offset = (destination - self.tracking_origin).dot(self.movement_axis);
             let clamped = offset.clamp(-self.tracking_half_width, self.tracking_half_width);
@@ -299,7 +364,15 @@ impl Bot {
         for axis in [0, 2] {
             let mut candidate = self.position;
             candidate[axis] = destination[axis];
-            if !self.collides(candidate, index, walls, other_positions) {
+            if !self.collides(candidate, index, walls, other_positions)
+                || self.can_move_without_penetrating(
+                    self.position,
+                    candidate,
+                    index,
+                    walls,
+                    other_positions,
+                )
+            {
                 self.position = candidate;
             }
         }
@@ -327,17 +400,34 @@ impl Bot {
             BotBehavior::Strafe => {}
             BotBehavior::TrackingStrafe => {}
             BotBehavior::Chase => {
-                let mut target = self.next_waypoint();
-                if let Some(waypoint) = target {
-                    if horizontal_distance(self.position, waypoint) < 1.0 {
+                if !self.chase_approach_selected {
+                    let radial = horizontal(self.position - player_position).normalize_or_zero();
+                    let radial = if radial.length_squared() > 0.0 {
+                        radial
+                    } else {
+                        random_horizontal_axis(&mut self.tracking_rng)
+                    };
+                    let (sin, cos) = self.chase_approach_angle.sin_cos();
+                    self.chase_approach_axis = Vec3::new(
+                        radial.x * cos + radial.z * sin,
+                        0.0,
+                        -radial.x * sin + radial.z * cos,
+                    );
+                    self.chase_approach_selected = true;
+                }
+                let mut waypoint = self.next_waypoint();
+                if let Some(target) = waypoint {
+                    if horizontal_distance(self.position, target) < 1.0 {
                         self.chase_waypoint += 1;
-                        target = self.next_waypoint();
+                        waypoint = self.next_waypoint();
                     }
                 }
-                let target = target.unwrap_or(player_position);
+                let target = waypoint.unwrap_or(
+                    player_position + self.chase_approach_axis * self.chase_approach_distance,
+                );
                 let offset = horizontal(target - self.position);
                 let distance = offset.length();
-                if target == player_position && distance <= BOT_CHASE_STOP_DISTANCE {
+                if waypoint.is_none() && distance <= 0.75 {
                     self.move_direction = Vec3::ZERO;
                 } else {
                     self.move_direction = offset.normalize_or_zero() * BOT_CHASE_SPEED;
@@ -386,6 +476,49 @@ impl Bot {
             })
     }
 
+    fn can_move_without_penetrating(
+        &self,
+        from: Vec3,
+        to: Vec3,
+        index: usize,
+        walls: &[Aabb],
+        other_positions: &[Option<Vec3>],
+    ) -> bool {
+        let minimum_distance_sq = (BOT_RADIUS * 2.0).powi(2);
+        let center_y = |position: Vec3| position.y + BOT_HEIGHT * 0.5;
+        walls.iter().all(|wall| {
+            let vertical_overlap = |position: Vec3| {
+                center_y(position) + BOT_HEIGHT * 0.5 >= wall.min.y
+                    && center_y(position) - BOT_HEIGHT * 0.5 <= wall.max.y
+            };
+            let distance_sq = |position: Vec3| {
+                let closest_x = position.x.clamp(wall.min.x, wall.max.x);
+                let closest_z = position.z.clamp(wall.min.z, wall.max.z);
+                (position.x - closest_x).powi(2) + (position.z - closest_z).powi(2)
+            };
+            let next_distance = distance_sq(to);
+            let next_overlaps = vertical_overlap(to) && next_distance < BOT_RADIUS * BOT_RADIUS;
+            !next_overlaps
+                || (vertical_overlap(from)
+                    && next_distance + BOT_COLLISION_EPSILON >= distance_sq(from))
+        }) && other_positions
+            .iter()
+            .enumerate()
+            .all(|(other_index, other)| {
+                if other_index == index {
+                    return true;
+                }
+                let Some(other) = other else {
+                    return true;
+                };
+                let old_distance = horizontal_distance_sq(from, *other);
+                let next_distance = horizontal_distance_sq(to, *other);
+                next_distance >= minimum_distance_sq
+                    || (old_distance < minimum_distance_sq
+                        && next_distance + BOT_COLLISION_EPSILON >= old_distance)
+            })
+    }
+
     pub fn can_spawn_at(
         &self,
         position: Vec3,
@@ -415,6 +548,18 @@ impl Bot {
         };
         self.tracking_steps_remaining = random_tracking_stride(&mut self.tracking_rng);
         self.chase_waypoint = 0;
+        self.chase_approach_angle =
+            (random_unit(&mut self.tracking_rng) * 2.0 - 1.0) * std::f32::consts::FRAC_PI_3;
+        self.chase_approach_axis = Vec3::ZERO;
+        self.chase_approach_selected = false;
+        self.chase_approach_distance = BOT_CHASE_APPROACH_MIN_DISTANCE
+            + random_unit(&mut self.tracking_rng)
+                * (BOT_CHASE_APPROACH_MAX_DISTANCE - BOT_CHASE_APPROACH_MIN_DISTANCE);
+        self.chase_avoid_sign = if next_bot_random(&mut self.tracking_rng).is_multiple_of(2) {
+            1.0
+        } else {
+            -1.0
+        };
         self.move_direction = Vec3::ZERO;
     }
 }
@@ -426,7 +571,11 @@ fn random_tracking_stride(state: &mut u32) -> u16 {
 }
 
 fn random_bot_yaw(state: &mut u32) -> f32 {
-    (next_bot_random(state) as f32 / u32::MAX as f32) * std::f32::consts::TAU
+    random_unit(state) * std::f32::consts::TAU
+}
+
+fn random_unit(state: &mut u32) -> f32 {
+    next_bot_random(state) as f32 / u32::MAX as f32
 }
 
 fn random_horizontal_axis(state: &mut u32) -> Vec3 {
@@ -710,5 +859,45 @@ mod tests {
 
         assert_ne!(bot.movement_axis, initial_axis);
         assert_eq!(bot.tracking_origin, Vec3::new(4.0, 0.0, -3.0));
+    }
+
+    #[test]
+    fn chase_bot_reselects_its_approach_direction_after_respawn() {
+        let mut bot = Bot::with_behavior(Vec3::ZERO, BotBehavior::Chase, 99);
+        bot.think(Vec3::ZERO);
+        let previous_axis = bot.chase_approach_axis;
+        let previous_distance = bot.chase_approach_distance;
+        bot.respawn(Vec3::new(2.0, 0.0, 3.0));
+        bot.think(Vec3::ZERO);
+
+        assert_ne!(bot.chase_approach_axis, previous_axis);
+        assert_ne!(bot.chase_approach_distance, previous_distance);
+    }
+
+    #[test]
+    fn chase_bot_steers_around_a_blocking_barrier_and_resumes_its_route() {
+        let wall = Aabb::new(Vec3::new(-0.6, 0.0, -1.0), Vec3::new(0.6, 3.0, -0.5));
+        let mut bot = Bot::with_behavior(Vec3::new(0.0, 0.0, -4.0), BotBehavior::Chase, 99);
+        bot.chase_approach_axis = Vec3::Z;
+        bot.chase_approach_selected = true;
+        bot.chase_approach_distance = 6.0;
+        bot.chase_avoid_sign = 1.0;
+
+        let mut max_abs_x = 0.0_f32;
+        for _ in 0..600 {
+            bot.advance_motion(0, 1.0 / 60.0, Vec3::ZERO, &[wall], &[]);
+            max_abs_x = max_abs_x.max(bot.position.x.abs());
+        }
+
+        assert!(
+            bot.position.z > wall.max.z + 0.5,
+            "BOT should pass the barrier, position was {:?}",
+            bot.position
+        );
+        assert!(max_abs_x > 0.8, "BOT should route around its side");
+        assert!(
+            !bot.collides(bot.position, 0, &[wall], &[]),
+            "the detour must preserve wall collision"
+        );
     }
 }

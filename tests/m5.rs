@@ -47,6 +47,25 @@ fn static_strafe_and_chase_behaviors_have_distinct_motion() {
 }
 
 #[test]
+fn chase_bots_from_the_same_position_use_individual_approach_directions() {
+    let player = Vec3::ZERO;
+    let mut first = Bot::with_behavior(Vec3::new(10.0, 0.0, 0.0), BotBehavior::Chase, 20);
+    let mut second = Bot::with_behavior(Vec3::new(10.0, 0.0, 0.0), BotBehavior::Chase, 21);
+
+    for _ in 0..180 {
+        first.advance_motion(0, 1.0 / 60.0, player, &[], &[]);
+        second.advance_motion(0, 1.0 / 60.0, player, &[], &[]);
+    }
+
+    let first_direction = (first.position - Vec3::new(10.0, 0.0, 0.0)).normalize_or_zero();
+    let second_direction = (second.position - Vec3::new(10.0, 0.0, 0.0)).normalize_or_zero();
+    assert!(
+        first_direction.dot(second_direction) < 0.98,
+        "Chase bots should approach from distinct randomized directions"
+    );
+}
+
+#[test]
 fn strafing_bot_reverses_direction_smoothly_for_tracking_practice() {
     let mut bot = Bot::with_behavior(Vec3::ZERO, BotBehavior::Strafe, 0);
     bot.advance_motion(0, 1.0 / 60.0, Vec3::new(0.0, 0.0, -10.0), &[], &[]);
