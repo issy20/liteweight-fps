@@ -18,7 +18,7 @@ use liteweight_fps::{
     world, Options, Run,
 };
 #[cfg(feature = "bench")]
-use liteweight_fps::{FpsLog, PerfMode, PerfOptions, PerfRun};
+use liteweight_fps::{FpsLog, PerfMode, PerfOptions, PerfRun, PerfWeapon};
 use std::{
     sync::Arc,
     time::{Duration, Instant},
@@ -208,7 +208,7 @@ impl App {
             &self.colliders,
             damage,
         );
-        if self.session.recoil_enabled() {
+        if self.session.recoil_enabled() && !self.perf_recoil_disabled() {
             self.player.apply_recoil(recoil_kick);
         } else {
             self.weapons.active_mut().visual_recoil = 0.0;
@@ -374,6 +374,16 @@ impl App {
         #[cfg(feature = "bench")]
         {
             self.perf.is_some()
+        }
+        #[cfg(not(feature = "bench"))]
+        {
+            false
+        }
+    }
+    fn perf_recoil_disabled(&self) -> bool {
+        #[cfg(feature = "bench")]
+        {
+            self.perf.as_ref().is_some_and(|perf| !perf.options.recoil)
         }
         #[cfg(not(feature = "bench"))]
         {
@@ -601,12 +611,20 @@ impl ApplicationHandler for App {
                             PerfMode::Free => SessionMode::FreeTraining,
                             PerfMode::Tracking => SessionMode::TrackingAim,
                         },
+                        match perf.options.weapon {
+                            PerfWeapon::Pistol => WeaponKind::Pistol,
+                            PerfWeapon::Ar => WeaponKind::AssaultRifle,
+                            PerfWeapon::Sniper => WeaponKind::Sniper,
+                        },
                     )
                 });
                 #[cfg(feature = "bench")]
-                if let Some((bots, mode)) = perf_setup {
+                if let Some((bots, mode, weapon)) = perf_setup {
                     self.settings.bot_count = bots;
                     self.begin_session(mode);
+                    if weapon != WeaponKind::AssaultRifle {
+                        self.switch_weapon(weapon);
+                    }
                     self.capture_requested = false;
                     self.release_capture();
                 }
@@ -981,7 +999,7 @@ impl ApplicationHandler for App {
                     let (forward, dash, fire) = perf.activity_input();
                     self.input.forward = forward;
                     self.input.dash = dash;
-                    self.fire_input.ads = false;
+                    self.fire_input.ads = perf.options.ads;
                     self.fire_input.set_trigger(fire);
                 }
                 if (Input::should_simulate_gameplay(gameplay_active, self.window_focused)

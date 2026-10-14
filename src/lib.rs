@@ -510,6 +510,16 @@ pub enum PerfMode {
     Tracking,
 }
 
+/// Starting weapon for the automated performance run.
+#[cfg(feature = "bench")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PerfWeapon {
+    Pistol,
+    Ar,
+    Sniper,
+}
+
 /// Conditions for `--perf`, the automated gameplay performance run.
 #[cfg(feature = "bench")]
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -520,6 +530,9 @@ pub struct PerfOptions {
     pub warmup: f64,
     pub seconds: f64,
     pub vsync: bool,
+    pub recoil: bool,
+    pub ads: bool,
+    pub weapon: PerfWeapon,
     pub activity: PerfActivity,
     pub mode: PerfMode,
     pub output: String,
@@ -534,6 +547,9 @@ impl PerfOptions {
             warmup: 5.,
             seconds: 30.,
             vsync: true,
+            recoil: true,
+            ads: false,
+            weapon: PerfWeapon::Ar,
             activity: PerfActivity::Static,
             mode: PerfMode::Free,
             output: "results/game-perf".into(),
@@ -554,6 +570,28 @@ impl PerfOptions {
                     options.vsync = match value.as_str() {
                         "on" => true,
                         "off" => false,
+                        _ => return Err(invalid()),
+                    }
+                }
+                "--recoil" => {
+                    options.recoil = match value.as_str() {
+                        "on" => true,
+                        "off" => false,
+                        _ => return Err(invalid()),
+                    }
+                }
+                "--ads" => {
+                    options.ads = match value.as_str() {
+                        "on" => true,
+                        "off" => false,
+                        _ => return Err(invalid()),
+                    }
+                }
+                "--weapon" => {
+                    options.weapon = match value.as_str() {
+                        "pistol" => PerfWeapon::Pistol,
+                        "ar" => PerfWeapon::Ar,
+                        "sniper" => PerfWeapon::Sniper,
                         _ => return Err(invalid()),
                     }
                 }
@@ -735,7 +773,7 @@ impl PerfRun {
 
 #[cfg(all(test, feature = "bench"))]
 mod perf_options_tests {
-    use super::{PerfActivity, PerfMode, PerfOptions};
+    use super::{PerfActivity, PerfMode, PerfOptions, PerfWeapon};
 
     fn args(values: &[&str]) -> Vec<String> {
         values.iter().map(|s| s.to_string()).collect()
@@ -750,6 +788,9 @@ mod perf_options_tests {
         );
         assert_eq!(default.activity, PerfActivity::Static);
         assert_eq!(default.mode, PerfMode::Free);
+        assert!(default.recoil);
+        assert!(!default.ads);
+        assert_eq!(default.weapon, PerfWeapon::Ar);
 
         let parsed = PerfOptions::parse(&args(&[
             "--bots",
@@ -760,12 +801,21 @@ mod perf_options_tests {
             "tracking",
             "--vsync",
             "off",
+            "--recoil",
+            "off",
+            "--ads",
+            "on",
+            "--weapon",
+            "sniper",
         ]))
         .unwrap();
         assert_eq!(parsed.bots, 20);
         assert_eq!(parsed.activity, PerfActivity::Fire);
         assert_eq!(parsed.mode, PerfMode::Tracking);
         assert!(!parsed.vsync);
+        assert!(!parsed.recoil);
+        assert!(parsed.ads);
+        assert_eq!(parsed.weapon, PerfWeapon::Sniper);
     }
 
     #[test]
@@ -776,6 +826,9 @@ mod perf_options_tests {
             vec!["--seconds", "0"],
             vec!["--activity", "jump"],
             vec!["--mode", "arena"],
+            vec!["--recoil", "maybe"],
+            vec!["--ads", "maybe"],
+            vec!["--weapon", "sword"],
             vec!["--wat", "1"],
             vec!["--bots"],
         ] {
