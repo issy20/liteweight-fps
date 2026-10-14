@@ -1137,6 +1137,16 @@ fn append_centered_text_line(
     );
 }
 
+/// Build version label shown on the title screen.
+pub fn version_label() -> String {
+    format!("v{}", env!("CARGO_PKG_VERSION"))
+}
+
+/// Minimal font/license/copyright credit shown on the title screen.
+/// Restricted to ASCII so the embedded font atlas can render every glyph.
+pub const CREDITS_LABEL: &str =
+    "Font Cantarell (SIL OFL)  Code MIT/Apache-2.0  (c) 2026 liteweight-fps contributors";
+
 pub fn title_text(selected: usize, viewport: [u32; 2]) -> TextMesh {
     let mut mesh = TextMesh::default();
     title_text_into(&mut mesh, selected, viewport);
@@ -1185,6 +1195,8 @@ pub fn title_text_into(mesh: &mut TextMesh, selected: usize, viewport: [u32; 2])
         0.027,
         [0.67, 0.75, 0.77, 1.0],
     );
+    line(&version_label(), -0.86, 0.022, [0.67, 0.75, 0.77, 1.0]);
+    line(CREDITS_LABEL, -0.92, 0.017, [0.52, 0.58, 0.60, 1.0]);
 }
 
 fn modal_backdrop(mesh: &mut Scene, aspect: f32) {
@@ -2499,5 +2511,18 @@ mod tests {
                 "selected={selected} center={center} row={row_center}"
             );
         }
+    }
+
+    #[test]
+    fn title_shows_version_and_ascii_credits() {
+        assert_eq!(
+            super::version_label(),
+            format!("v{}", env!("CARGO_PKG_VERSION"))
+        );
+        assert!(super::CREDITS_LABEL.contains("Cantarell"));
+        assert!(super::CREDITS_LABEL.contains("MIT/Apache-2.0"));
+        // The embedded atlas only covers ASCII plus the infinity glyph.
+        assert!(super::CREDITS_LABEL.is_ascii());
+        assert!(super::version_label().is_ascii());
     }
 }
