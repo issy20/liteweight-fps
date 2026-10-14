@@ -1,40 +1,48 @@
-# 配布パッケージ
+# 配布
 
-Releaseパッケージには実行ファイル、README、起動・動作要件、プロジェクトのMIT/Apache-2.0ライセンス本文、フォントのSIL Open Font License、Cargo.lock依存関係のライセンス表と入手できたライセンス本文を含めます。Linuxパッケージにはビルド環境の`ldd`結果も含みます。本文がcrate sourceに含まれない依存はNOTICEに明記し、公開前に確認してください。シェーダーとフォントは実行ファイルへコンパイル時に埋め込まれており、実行時の`assets/`フォルダーは不要です。
+`liteweight-fps`は**ソース配布**を主とします。ビルド済みバイナリは配布しないため、macOSの公証やWindowsのAuthenticodeなど**署名は不要**です。利用者はRust stableツールチェーンで各自ビルドします。ローカルビルドの実行ファイルはOSのダウンロード検証（Gatekeeper / SmartScreen）の対象外です。
 
-## 起動
+## 動作要件
 
-- Windows: ZIPを展開して`liteweight-fps.exe`を実行します。
-- macOS: tar.gzを展開してターミナルから`./liteweight-fps`を実行します。
-- Linux: tar.gzを展開して`./liteweight-fps`を実行します。現在のCI成果物はUbuntu 22.04でビルドし、これを最低動作環境の暫定基準とします。X11またはWayland、対応GPUドライバー、実行時共有ライブラリが必要です。未確認の古いディストリビューションは対応対象としません。
+- Rust stable（rustup）
+- 各OSのネイティブビルド環境
+  - macOS: Xcode Command Line Tools
+  - Windows: MSVC Build Tools（Visual Studioの「C++によるデスクトップ開発」）
+  - Linux: Cコンパイラ、`pkg-config`、ALSA、XKB、Waylandの開発パッケージ
+- Linux: X11またはWayland、対応GPUドライバー
+- 音声デバイスは任意。初期化できない場合は画面に通知して無音で続行します。
 
-Linuxで音声デバイスを初期化できない場合は、画面に通知して無音で続行します。動的リンクされたシステムライブラリとGPUドライバーはOS側に必要です。Release workflowは`ldd`の結果をログに残し、未解決ライブラリがあれば失敗します。ドラフトを公開する前にログの依存一覧を確認してください。
-
-## ローカルでパッケージを作る
-
-Rust stable、対象OSのネイティブビルド環境、Python 3が必要です。Linuxでは`pkg-config`、ALSA、XKB、Waylandの開発パッケージを用意します。
+Debian/Ubuntuでのビルド前提:
 
 ```sh
-cargo build --locked --release --target aarch64-apple-darwin --bin liteweight-fps
-python3 scripts/dependency_notices.py --output target/THIRD_PARTY_NOTICES.txt
-python3 scripts/package_release.py --target aarch64-apple-darwin --release-dir target/aarch64-apple-darwin/release
+sudo apt install build-essential pkg-config libasound2-dev libwayland-dev libxkbcommon-dev
 ```
 
-ターゲットは`x86_64-pc-windows-msvc`、`x86_64-unknown-linux-gnu`、`aarch64-apple-darwin`、`x86_64-apple-darwin`です。出力先`dist/`に、WindowsはZIP、その他はtar.gzを作ります。同名の出力がある場合は上書きせず失敗します。
-Linuxパッケージでは`ldd target/x86_64-unknown-linux-gnu/release/liteweight-fps | tee target/linux-runtime-dependencies.txt`を先に実行してください。
+## ビルドと起動
 
-GitHub Actionsの「Release packages」workflowを手動実行すると、4ターゲットの検証用artifactを保存します。Cargoのバージョンと一致する`v*`タグをpushすると、SHA-256一覧を含む**ドラフトGitHub Release**を作成します。ドラフトは署名・実機検証・ライセンス確認が済むまで公開しないでください。
+```sh
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+git clone --depth 1 https://github.com/issy20/liteweight-fps.git
+cd liteweight-fps
+cargo run --release --locked
+```
 
-## 現在の配布範囲
+初回は依存のコンパイルで数分かかります。シェーダーとフォントは実行ファイルへコンパイル時に埋め込まれるため、実行時の`assets/`フォルダーは不要です。
 
-これらは動作検証用の未署名プレビューパッケージです。macOSの署名・公証、WindowsのAuthenticode署名、最低GPUの確定、Windows/Linux/macOS各構成の実機確認は未完了です。プロジェクト本体のMIT/Apache-2.0本文は同梱しますが、NOTICEに本文未収録と記載された依存のライセンス通知は公開前に確認が必要です。これらの確認が終わるまでは一般公開しないでください。フォントのライセンス通知は各パッケージに含めます。
+## 設定と保存先
 
-現行の性能は未測定です。内蔵GPUでの快適動作や最低FPSを示す表示・宣伝には使わないでください。
-
-ゲーム設定は実行ファイルの隣ではなく、OSのユーザー設定領域に保存されます。
+設定は実行ファイルの隣ではなく、OSのユーザー設定領域に保存されます。`settings.json`に設定を保存します。
 
 - Windows: `%APPDATA%\liteweight-fps\`
 - macOS: `~/Library/Application Support/liteweight-fps/`
 - Linux: `${XDG_CONFIG_HOME:-~/.config}/liteweight-fps/`
 
-`settings.json`に設定を保存します。
+## ライセンス
+
+ソースはMIT OR Apache-2.0で提供します（`LICENSE-MIT` / `LICENSE-APACHE`）。埋め込みフォントはSIL Open Font Licenseです（`assets/fonts/OFL.txt`）。依存クレートのライセンスは各利用者がcrates.ioから取得するため、配布物への同梱は行いません。
+
+## 検証状態
+
+- 現行の性能は未測定です。内蔵GPUでの快適動作や最低FPSを示す表示・宣伝には使わないでください。
+- Windows / Linux（X11・Wayland） / macOS の実機での起動・入力・表示・音声・終了は未検証です。CIのビルド・自動テスト結果は実機確認とは区別してください。
+- 開発用に4ターゲットのパッケージを生成するスクリプト（`scripts/package_release.py`）とworkflowを残していますが、**公開リリースではバイナリを添付しません**。内部検証専用です。

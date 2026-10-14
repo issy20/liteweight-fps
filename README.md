@@ -45,15 +45,36 @@ The sniper scope moves into alignment progressively. During ADS, the scope
 opening grows and the area outside it darkens smoothly. Weapon switching has a
 draw transition that lowers the old weapon before raising the new one.
 
-## Run
+## Run from source
 
-Use the Rust stable toolchain and the native build tools for your operating
-system. See [Distribution](DISTRIBUTION.md) for packaged builds and platform
-requirements.
+The game is distributed as source. Build it locally with the Rust stable
+toolchain; no prebuilt or signed binaries are provided. See
+[Distribution](DISTRIBUTION.md) for platform requirements.
 
-```sh
-cargo run --release
-```
+1. Install the native build tools for your OS.
+
+   - macOS: run `xcode-select --install`.
+   - Windows: install the MSVC Build Tools (Visual Studio "Desktop development with C++").
+   - Linux (Debian/Ubuntu):
+     ```sh
+     sudo apt install build-essential pkg-config libasound2-dev libwayland-dev libxkbcommon-dev
+     ```
+
+2. Install Rust stable:
+   ```sh
+   curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+   ```
+
+3. Clone and run:
+   ```sh
+   git clone --depth 1 https://github.com/issy20/liteweight-fps.git
+   cd liteweight-fps
+   cargo run --release --locked
+   ```
+
+The first build compiles all dependencies and takes a few minutes. The audio
+device is optional: if none is available, the game reports the reason and
+continues silently.
 
 | Input | Action |
 | --- | --- |
@@ -119,9 +140,9 @@ cargo run --release -- --smoke
 It checks zero-size surface handling and must finish within 30 seconds. It does
 not replace manual testing of minimizing and restoring the window.
 
-The release workflow also runs the Python package tests and creates packages
-for Windows x64, Linux x64, macOS Apple Silicon, and macOS Intel. To run the
-package tests and regenerate the dependency license inventory locally:
+The repository includes internal benchmark, packaging, and dependency-notice
+scripts for maintainers. Run their unit tests and regenerate the dependency
+license inventory with:
 
 ```sh
 python3 -m unittest discover -s scripts -p 'test_*.py'
@@ -130,13 +151,12 @@ python3 scripts/dependency_notices.py --output target/THIRD_PARTY_NOTICES.txt
 
 ## Release status
 
-The release workflow creates unsigned preview packages. macOS signing and
-notarization, Windows Authenticode signing, representative hardware performance
-measurements, and runtime checks on every target OS are not complete. Some
-third-party crate sources do not include their license text; review
-`THIRD_PARTY_NOTICES.txt` and [Distribution](DISTRIBUTION.md) before public
-distribution. Do not interpret the available packages as a guarantee of
-performance or verified compatibility across all listed systems.
+The game is distributed as source only; no prebuilt or signed binaries are
+provided. Build it with the Rust stable toolchain, so local builds are not
+subject to OS download warnings. Representative hardware performance
+measurements and runtime checks on every target OS are not complete. Do not
+interpret the build as a guarantee of performance or verified compatibility
+across all listed systems.
 
 ## Source layout
 
