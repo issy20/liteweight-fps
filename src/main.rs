@@ -958,7 +958,11 @@ impl ApplicationHandler for App {
                                 audio.play(Sound::Footstep);
                             }
                         }
-                        self.weapons.advance(1. / 60., self.fire_input.ads);
+                        self.weapons.advance_with_movement(
+                            1. / 60.,
+                            self.fire_input.ads,
+                            horizontal_distance * 60.0,
+                        );
                         let view_right =
                             Vec3::new(self.player.yaw.cos(), 0.0, self.player.yaw.sin());
                         self.combat.advance_with_view(

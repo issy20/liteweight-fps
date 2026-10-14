@@ -134,6 +134,8 @@ pub struct Weapon {
     pub ammo: u32,
     pub ads_progress: f32,
     pub visual_recoil: f32,
+    sway_phase: f32,
+    sway_amount: f32,
     cooldown: f32,
     pub reload_remaining: f32,
     pub bolt_remaining: f32,
@@ -152,6 +154,12 @@ pub struct WeaponViewModelLayout {
 
 const VIEW_MODEL_MUZZLE_DEPTH: f32 = 0.65;
 const SNIPER_SCOPE_SIGHT_HEIGHT: f32 = 0.62;
+const WEAPON_SWAY_FREQUENCY_HZ: f32 = 1.8;
+const WEAPON_SWAY_HORIZONTAL: f32 = 0.016;
+const WEAPON_SWAY_VERTICAL: f32 = 0.010;
+const WEAPON_SWAY_ADS_REDUCTION: f32 = 0.9;
+const WEAPON_SWAY_RESPONSE: f32 = 10.0;
+const WEAPON_SWAY_REFERENCE_SPEED: f32 = 6.5;
 
 impl Default for Weapon {
     fn default() -> Self {
@@ -166,12 +174,30 @@ impl Weapon {
             ammo: data.magazine,
             ads_progress: 0.,
             visual_recoil: 0.,
+            sway_phase: 0.0,
+            sway_amount: 0.0,
             cooldown: 0.,
             reload_remaining: 0.,
             bolt_remaining: 0.,
         }
     }
     pub fn advance(&mut self, dt: f32, ads: bool) {
+        self.advance_with_movement(dt, ads, 0.0);
+    }
+    pub fn advance_with_movement(&mut self, dt: f32, ads: bool, horizontal_speed: f32) {
+        if dt.is_finite() && dt > 0.0 {
+            self.sway_phase = (self.sway_phase
+                + dt * std::f32::consts::TAU * WEAPON_SWAY_FREQUENCY_HZ)
+                .rem_euclid(std::f32::consts::TAU);
+            let speed = if horizontal_speed.is_finite() {
+                horizontal_speed.max(0.0)
+            } else {
+                0.0
+            };
+            let target_amount = (speed / WEAPON_SWAY_REFERENCE_SPEED).clamp(0.0, 1.0);
+            let response = (dt * WEAPON_SWAY_RESPONSE).clamp(0.0, 1.0);
+            self.sway_amount += (target_amount - self.sway_amount) * response;
+        }
         self.visual_recoil = (self.visual_recoil - dt * 10.0).max(0.0);
         let aiming = ads && self.reload_remaining == 0.0;
         let duration = if aiming {
@@ -219,8 +245,11 @@ impl Weapon {
         };
         let hip_base_y = -0.7 + weapon_y_offset - recoil_drop - reload_drop;
         let ads_raise = (0.7 - sight_height) * progress;
-        let center_x = 0.36 * (1.0 - progress);
-        let base_y = hip_base_y + ads_raise;
+        let sway_scale = self.sway_amount * (1.0 - WEAPON_SWAY_ADS_REDUCTION * progress);
+        let sway_x = self.sway_phase.sin() * WEAPON_SWAY_HORIZONTAL * sway_scale;
+        let sway_y = (self.sway_phase * 2.0).sin() * WEAPON_SWAY_VERTICAL * sway_scale;
+        let center_x = 0.36 * (1.0 - progress) + sway_x;
+        let base_y = hip_base_y + ads_raise + sway_y;
         WeaponViewModelLayout {
             center_x,
             base_y,
@@ -335,6 +364,9 @@ impl Loadout {
         true
     }
     pub fn advance(&mut self, dt: f32, ads: bool) {
+        self.advance_with_movement(dt, ads, 0.0);
+    }
+    pub fn advance_with_movement(&mut self, dt: f32, ads: bool, horizontal_speed: f32) {
         let active = self.active;
         self.switch_remaining = (self.switch_remaining - dt).max(0.0);
         if self.switch_remaining < 1e-5 {
@@ -342,9 +374,14 @@ impl Loadout {
             self.switch_from = None;
         }
         for weapon in &mut self.weapons {
-            weapon.advance(
+            weapon.advance_with_movement(
                 dt,
                 weapon.kind == active && ads && self.switch_remaining == 0.0,
+                if weapon.kind == active {
+                    horizontal_speed
+                } else {
+                    0.0
+                },
             );
         }
     }

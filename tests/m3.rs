@@ -65,6 +65,41 @@ fn weapon_visual_recoil_returns_while_view_recoil_stays() {
 }
 
 #[test]
+fn weapon_sway_follows_movement_settles_when_still_and_is_damped_while_ads() {
+    let mut moving = Weapon::default();
+    let hip_base = moving.view_model_layout(0.0);
+    let aim_direction = glam::Vec3::new(0.1, 0.2, -1.0).normalize();
+    let shot_direction = moving.shot_direction(aim_direction);
+    for _ in 0..30 {
+        moving.advance_with_movement(1.0 / 60.0, false, 4.0);
+    }
+    let hip_moving = moving.view_model_layout(0.0);
+    assert_ne!(hip_moving.center_x, hip_base.center_x);
+    assert_ne!(hip_moving.base_y, hip_base.base_y);
+    assert_eq!(moving.shot_direction(aim_direction), shot_direction);
+
+    let mut still = Weapon::default();
+    for _ in 0..90 {
+        still.advance_with_movement(1.0 / 60.0, false, 0.0);
+    }
+    let settled = still.view_model_layout(0.0);
+    assert!((settled.center_x - hip_base.center_x).abs() < 1e-5);
+    assert!((settled.base_y - hip_base.base_y).abs() < 1e-5);
+
+    let mut ads = Weapon::default();
+    ads.ads_progress = 1.0;
+    let ads_base = ads.view_model_layout(0.0);
+    for _ in 0..30 {
+        ads.advance_with_movement(1.0 / 60.0, true, 4.0);
+    }
+    let ads_moving = ads.view_model_layout(0.0);
+    assert!(
+        (ads_moving.center_x - ads_base.center_x).abs()
+            < (hip_moving.center_x - hip_base.center_x).abs() * 0.2
+    );
+}
+
+#[test]
 fn ar_and_sniper_recoil_tuning_is_reduced_while_pistol_stays_unchanged() {
     use liteweight_fps::simulation::weapon::{Loadout, WeaponKind};
 
