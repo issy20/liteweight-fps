@@ -42,7 +42,68 @@ impl Scene {
                 .extend([base, base + 1, base + 2, base, base + 2, base + 3]);
         }
     }
+
+    fn quad(&mut self, points: [Vec3; 4], color: [f32; 3]) {
+        let base = self.vertices.len() as u16;
+        for point in points {
+            self.vertices.push(Vertex {
+                position: point.to_array(),
+                color: [color[0], color[1], color[2], 1.0],
+            });
+        }
+        self.indices
+            .extend([base, base + 1, base + 2, base, base + 2, base + 3]);
+    }
+
+    fn triangle(&mut self, points: [Vec3; 3], color: [f32; 3]) {
+        let base = self.vertices.len() as u16;
+        for point in points {
+            self.vertices.push(Vertex {
+                position: point.to_array(),
+                color: [color[0], color[1], color[2], 1.0],
+            });
+        }
+        self.indices.extend([base, base + 1, base + 2]);
+    }
+
+    fn ramp_z(&mut self, x: f32, low_z: f32, width: f32, length: f32, rise: f32, color: [f32; 3]) {
+        let left = x - width * 0.5;
+        let right = x + width * 0.5;
+        let high_z = low_z - length;
+        let low_left = Vec3::new(left, 0.0, low_z);
+        let low_right = Vec3::new(right, 0.0, low_z);
+        let high_left = Vec3::new(left, rise, high_z);
+        let high_right = Vec3::new(right, rise, high_z);
+        let back_left = Vec3::new(left, 0.0, high_z);
+        let back_right = Vec3::new(right, 0.0, high_z);
+        self.quad(
+            [low_left, low_right, high_right, high_left],
+            [color[0] * 1.15, color[1] * 1.15, color[2] * 1.15],
+        );
+        self.triangle([low_left, high_left, back_left], color);
+        self.triangle([low_right, back_right, high_right], color);
+        self.quad(
+            [back_left, back_right, high_right, high_left],
+            [color[0] * 0.72, color[1] * 0.72, color[2] * 0.72],
+        );
+        self.quad(
+            [low_right, low_left, back_left, back_right],
+            [color[0] * 0.58, color[1] * 0.58, color[2] * 0.58],
+        );
+    }
 }
+
+const STAIR_X: f32 = -22.5;
+const STAIR_WIDTH: f32 = 3.2;
+const STAIR_TREAD: f32 = 0.5;
+const STAIR_RISE: f32 = 0.18;
+const STAIR_COUNT: usize = 10;
+const ROUTE_LOW_Z: f32 = 4.5;
+const RAMP_X: f32 = 22.5;
+const RAMP_WIDTH: f32 = 3.2;
+const RAMP_LENGTH: f32 = 8.0;
+const RAMP_RISE: f32 = 1.8;
+const RAMP_SEGMENTS: usize = 32;
 /// 静的な50m角のアリーナ。移動・衝突・AIには依存しない。
 pub fn arena() -> Scene {
     arena_scaled(1.0)
@@ -166,6 +227,41 @@ pub fn arena_scaled(scale: f32) -> Scene {
             );
         }
     }
+    for index in 0..STAIR_COUNT {
+        let height = STAIR_RISE * (index + 1) as f32;
+        let z = ROUTE_LOW_Z - (index as f32 + 0.5) * STAIR_TREAD;
+        s.cube(
+            horizontal(Vec3::new(STAIR_X, height * 0.5, z)),
+            horizontal(Vec3::new(STAIR_WIDTH, height, STAIR_TREAD)),
+            [0.42, 0.56, 0.58],
+        );
+    }
+    let stair_landing_start = ROUTE_LOW_Z - STAIR_COUNT as f32 * STAIR_TREAD;
+    s.cube(
+        horizontal(Vec3::new(
+            STAIR_X,
+            STAIR_COUNT as f32 * STAIR_RISE * 0.5,
+            stair_landing_start - 1.5,
+        )),
+        horizontal(Vec3::new(STAIR_WIDTH, STAIR_COUNT as f32 * STAIR_RISE, 3.0)),
+        [0.36, 0.49, 0.52],
+    );
+
+    let ramp_low_z = ROUTE_LOW_Z;
+    let ramp_high_z = ramp_low_z - RAMP_LENGTH;
+    s.ramp_z(
+        RAMP_X * scale,
+        ramp_low_z * scale,
+        RAMP_WIDTH * scale,
+        RAMP_LENGTH * scale,
+        RAMP_RISE,
+        [0.48, 0.60, 0.57],
+    );
+    s.cube(
+        horizontal(Vec3::new(RAMP_X, RAMP_RISE * 0.5, ramp_high_z - 1.0)),
+        horizontal(Vec3::new(RAMP_WIDTH, RAMP_RISE, 2.0)),
+        [0.36, 0.49, 0.52],
+    );
     s
 }
 
@@ -219,5 +315,58 @@ pub fn arena_colliders_scaled(scale: f32) -> Vec<Aabb> {
             ));
         }
     }
+    for index in 0..STAIR_COUNT {
+        let height = STAIR_RISE * (index + 1) as f32;
+        let z = ROUTE_LOW_Z - (index as f32 + 0.5) * STAIR_TREAD;
+        colliders.push(Aabb::new(
+            Vec3::new(
+                (STAIR_X - STAIR_WIDTH * 0.5) * scale,
+                0.0,
+                (z - STAIR_TREAD * 0.5) * scale,
+            ),
+            Vec3::new(
+                (STAIR_X + STAIR_WIDTH * 0.5) * scale,
+                height,
+                (z + STAIR_TREAD * 0.5) * scale,
+            ),
+        ));
+    }
+    let stair_landing_start = ROUTE_LOW_Z - STAIR_COUNT as f32 * STAIR_TREAD;
+    colliders.push(Aabb::new(
+        Vec3::new(
+            (STAIR_X - STAIR_WIDTH * 0.5) * scale,
+            0.0,
+            (stair_landing_start - 3.0) * scale,
+        ),
+        Vec3::new(
+            (STAIR_X + STAIR_WIDTH * 0.5) * scale,
+            STAIR_COUNT as f32 * STAIR_RISE,
+            stair_landing_start * scale,
+        ),
+    ));
+
+    let segment_depth = RAMP_LENGTH / RAMP_SEGMENTS as f32;
+    for index in 0..RAMP_SEGMENTS {
+        let z_high = ROUTE_LOW_Z - index as f32 * segment_depth;
+        let z_low = z_high - segment_depth;
+        let height = RAMP_RISE * (index + 1) as f32 / RAMP_SEGMENTS as f32;
+        colliders.push(Aabb::new(
+            Vec3::new((RAMP_X - RAMP_WIDTH * 0.5) * scale, 0.0, z_low * scale),
+            Vec3::new((RAMP_X + RAMP_WIDTH * 0.5) * scale, height, z_high * scale),
+        ));
+    }
+    let ramp_high_z = ROUTE_LOW_Z - RAMP_LENGTH;
+    colliders.push(Aabb::new(
+        Vec3::new(
+            (RAMP_X - RAMP_WIDTH * 0.5) * scale,
+            0.0,
+            (ramp_high_z - 2.0) * scale,
+        ),
+        Vec3::new(
+            (RAMP_X + RAMP_WIDTH * 0.5) * scale,
+            RAMP_RISE,
+            ramp_high_z * scale,
+        ),
+    ));
     colliders
 }

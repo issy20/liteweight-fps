@@ -15,6 +15,7 @@ pub const WALK_FOOTSTEP_INTERVAL: f32 = 0.45;
 pub const DASH_FOOTSTEP_INTERVAL: f32 = 0.30;
 /// 衝突判定の丸め誤差許容。接触距離の拡大ではなく、f32精度の境界での誤接触を防ぐ。
 const COLLISION_EPSILON: f32 = 1e-4;
+const MAX_STEP_HEIGHT: f32 = 0.22;
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct MovementEvents {
@@ -216,16 +217,57 @@ impl Player {
             self.velocity.y = JUMP_VELOCITY;
             self.on_ground = false;
         }
-        if !self.on_ground {
-            self.velocity.y -= GRAVITY * dt;
-        }
         // 水平は軸ごとに移動して衝突を解決し、残った方向へ滑る。
         for axis in [0, 2] {
+            if horizontal[axis].abs() <= COLLISION_EPSILON {
+                continue;
+            }
+            let old_position = self.position;
             self.position[axis] += horizontal[axis] * dt;
             if Self::collides(colliders, self.body_center()) {
-                self.position[axis] -= horizontal[axis] * dt;
-                self.velocity[axis] = 0.;
+                let current_foot = self.foot_height();
+                let step_top = colliders
+                    .iter()
+                    .filter(|collider| {
+                        collider.min.y <= current_foot + COLLISION_EPSILON
+                            && collider.max.y > current_foot + COLLISION_EPSILON
+                            && collider.max.y <= current_foot + MAX_STEP_HEIGHT
+                            && Self::overlaps_player_footprint(collider, self.position)
+                    })
+                    .map(|collider| collider.max.y)
+                    .max_by(f32::total_cmp);
+                if self.on_ground && !input.jump {
+                    if let Some(step_top) = step_top {
+                        self.position.y += step_top - current_foot;
+                        if !Self::collides(colliders, self.body_center()) {
+                            self.velocity.y = 0.0;
+                            continue;
+                        }
+                    }
+                }
+                self.position = old_position;
+                self.velocity[axis] = 0.0;
             }
+        }
+        if self.on_ground && !input.jump {
+            let current_foot = self.foot_height();
+            let support = colliders
+                .iter()
+                .filter(|collider| {
+                    collider.max.y <= current_foot + COLLISION_EPSILON
+                        && collider.max.y >= current_foot - MAX_STEP_HEIGHT
+                        && Self::overlaps_player_footprint(collider, self.position)
+                })
+                .map(|collider| collider.max.y)
+                .max_by(f32::total_cmp);
+            if let Some(support) = support {
+                self.position.y = EYE_HEIGHT + support;
+            } else {
+                self.on_ground = false;
+            }
+        }
+        if !self.on_ground {
+            self.velocity.y -= GRAVITY * dt;
         }
         self.position.y += self.velocity.y * dt;
         if Self::collides(colliders, self.body_center()) {
@@ -250,7 +292,7 @@ impl Player {
         colliders.iter().any(|c| {
             let cy_min = center.y - half;
             let cy_max = center.y + half;
-            if cy_max <= c.min.y || cy_min >= c.max.y {
+            if cy_max <= c.min.y + COLLISION_EPSILON || cy_min >= c.max.y - COLLISION_EPSILON {
                 return false;
             }
             let cx = center.x.clamp(c.min.x, c.max.x);
@@ -261,5 +303,13 @@ impl Player {
             let r = PLAYER_RADIUS - COLLISION_EPSILON;
             dx * dx + dz * dz < r * r
         })
+    }
+
+    fn overlaps_player_footprint(collider: &Aabb, position: Vec3) -> bool {
+        let closest_x = position.x.clamp(collider.min.x, collider.max.x);
+        let closest_z = position.z.clamp(collider.min.z, collider.max.z);
+        let dx = position.x - closest_x;
+        let dz = position.z - closest_z;
+        dx * dx + dz * dz < PLAYER_RADIUS * PLAYER_RADIUS
     }
 }

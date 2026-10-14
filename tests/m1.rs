@@ -74,8 +74,8 @@ fn internal_resolution_updates_atomically_and_rejects_invalid_sizes() {
 #[test]
 fn arena_has_floor_four_walls_and_six_covers_without_targets() {
     let mesh = liteweight_fps::world::arena();
-    assert_eq!(mesh.vertices.len(), 11 * 24);
-    assert_eq!(mesh.indices.len(), 11 * 36);
+    assert!(mesh.vertices.len() > 11 * 24);
+    assert!(mesh.indices.len() > 11 * 36);
     assert!(mesh
         .indices
         .iter()
@@ -118,4 +118,30 @@ fn arena_size_scales_with_bot_population_while_default_stays_50_meters() {
     assert!(
         arena_colliders_scaled(2.2)[1].min.x < liteweight_fps::world::arena_colliders()[1].min.x
     );
+}
+
+#[test]
+fn arena_contains_stair_steps_and_a_low_poly_ramp() {
+    let mesh = liteweight_fps::world::arena();
+    let has_vertex = |expected: [f32; 3]| {
+        mesh.vertices
+            .iter()
+            .any(|vertex| (0..3).all(|axis| (vertex.position[axis] - expected[axis]).abs() < 1e-5))
+    };
+    assert!(
+        has_vertex([20.9, 0.0, 4.5]),
+        "ramp must begin beside the east wall"
+    );
+    assert!(
+        has_vertex([20.9, 1.8, -3.5]),
+        "ramp must reach the wall-side landing"
+    );
+    assert!(
+        has_vertex([-24.1, 1.8, -0.5]),
+        "stairs must reach their landing beside the west wall"
+    );
+    assert!(mesh
+        .indices
+        .iter()
+        .all(|index| usize::from(*index) < mesh.vertices.len()));
 }

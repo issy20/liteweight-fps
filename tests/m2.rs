@@ -65,6 +65,40 @@ fn movement_reports_one_landing_event_after_a_jump() {
 }
 
 #[test]
+fn player_can_walk_up_arena_stairs_and_ramp() {
+    let colliders = world::arena_colliders();
+    for (x, start_z, minimum_height) in [(-22.5, 4.5, 1.2), (22.5, 4.5, 0.8)] {
+        let mut player = Player::new();
+        player.position.x = x;
+        player.position.z = start_z;
+        for _ in 0..105 {
+            player.move_with_collision(
+                &colliders,
+                input(false, false, true, false, false, false),
+                1.0 / 60.0,
+            );
+        }
+        assert!(
+            player.position.y > EYE_HEIGHT + minimum_height,
+            "route at x={x} should be traversable, position was {:?}",
+            player.position
+        );
+        for _ in 0..115 {
+            player.move_with_collision(
+                &colliders,
+                input(false, false, false, true, false, false),
+                1.0 / 60.0,
+            );
+        }
+        assert!(
+            (player.position.y - EYE_HEIGHT).abs() < 0.03,
+            "route at x={x} should also be traversable downhill, position was {:?}",
+            player.position
+        );
+    }
+}
+
+#[test]
 fn player_initializes_deterministically() {
     let p = Player::new();
     assert_eq!(p.position, Vec3::new(0.0, 1.6, 0.0));
@@ -468,7 +502,11 @@ fn wall_collision_stops_movement_with_sliding() {
 fn arena_colliders_cover_floor_walls_and_covers() {
     let colliders = world::arena_colliders();
     assert!(colliders[1..5].iter().all(|wall| wall.max.y == 12.0));
-    assert!(colliders[5..].iter().all(|cover| cover.max.y == 5.0));
+    assert!(colliders[5..11].iter().all(|cover| cover.max.y == 5.0));
+    assert!(
+        colliders.len() > 11,
+        "arena includes walkable elevation routes"
+    );
     let hits_cover = colliders
         .iter()
         .any(|c| c.hits_cylinder(Vec3::new(0., 1., -8.), PLAYER_RADIUS, PLAYER_HEIGHT));
