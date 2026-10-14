@@ -119,14 +119,23 @@ fn respawn_does_not_overlap_other_live_bots_and_dead_bot_is_not_rendered() {
 }
 
 #[test]
-fn repeated_respawns_cycle_across_the_arena_instead_of_clustering_near_the_player() {
+fn repeated_respawns_are_randomized_and_remain_valid_across_the_arena() {
     let mut combat = Combat::new(vec![Bot::new(Vec3::new(0.0, 0.0, -5.0))]);
+    combat.set_respawn_seed(0x1234_5678);
+    let walls = liteweight_fps::world::arena_colliders();
     let mut positions = Vec::new();
     for _ in 0..8 {
         combat.targets[0].apply_damage(100);
-        combat.advance(BOT_RESPAWN_SECONDS + 0.01, Vec3::ZERO, &[]);
-        positions.push(combat.targets[0].position);
+        combat.advance(BOT_RESPAWN_SECONDS + 0.01, Vec3::ZERO, &walls);
+        let position = combat.targets[0].position;
+        assert!(combat.targets[0].can_spawn_at(position, 0, &walls, &[Some(position)]));
+        positions.push(position);
     }
+
+    assert!(positions
+        .iter()
+        .all(|position| { position.distance(Vec3::ZERO) >= BOT_MIN_RESPAWN_DISTANCE }));
+    assert!(positions.windows(2).all(|pair| pair[0] != pair[1]));
 
     let span = |component: fn(Vec3) -> f32| {
         let (min, max) = positions
@@ -137,8 +146,41 @@ fn repeated_respawns_cycle_across_the_arena_instead_of_clustering_near_the_playe
             });
         max - min
     };
-    assert!(span(|position| position.x) >= 30.0);
-    assert!(span(|position| position.z) >= 30.0);
+    assert!(span(|position| position.x) >= 20.0);
+    assert!(span(|position| position.z) >= 20.0);
+}
+
+#[test]
+fn free_training_respawn_sequence_is_reproducible_per_seed() {
+    let sample = |seed| {
+        let mut combat = Combat::new(vec![Bot::new(Vec3::new(0.0, 0.0, -5.0))]);
+        combat.set_respawn_seed(seed);
+        let mut positions = Vec::new();
+        for _ in 0..8 {
+            combat.targets[0].apply_damage(100);
+            combat.advance(BOT_RESPAWN_SECONDS + 0.01, Vec3::ZERO, &[]);
+            positions.push(combat.targets[0].position);
+        }
+        positions
+    };
+
+    assert_eq!(sample(0x1234_5678), sample(0x1234_5678));
+    assert_ne!(sample(0x1234_5678), sample(0x8765_4321));
+}
+
+#[test]
+fn free_training_respawn_does_not_overlap_another_live_bot() {
+    let other_position = Vec3::new(-20.0, 0.0, -20.0);
+    let mut combat = Combat::new(vec![
+        Bot::new(Vec3::new(0.0, 0.0, -5.0)),
+        Bot::new(other_position),
+    ]);
+    combat.set_respawn_seed(0x1234_5678);
+    combat.targets[0].apply_damage(100);
+    combat.advance(BOT_RESPAWN_SECONDS + 0.01, Vec3::ZERO, &[]);
+
+    assert!(combat.targets[0].position.distance(other_position) >= 0.72);
+    assert!(combat.targets[0].position.distance(Vec3::ZERO) >= BOT_MIN_RESPAWN_DISTANCE);
 }
 
 #[test]

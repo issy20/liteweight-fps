@@ -3,6 +3,7 @@ use crate::{
     simulation::bot::{horizontal_distance, line_of_sight_blocked, player_eye_position},
 };
 use glam::Vec3;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 pub use crate::simulation::bot::{Bot, BotBehavior, BOT_MIN_RESPAWN_DISTANCE, BOT_RESPAWN_SECONDS};
 pub type Target = Bot;
@@ -51,6 +52,74 @@ const TRACKING_SPAWN_MAX_X: f32 = 16.5;
 const TRACKING_SPAWN_MIN_Z: f32 = -10.0;
 const TRACKING_SPAWN_MAX_Z: f32 = 10.0;
 const TRACKING_SPAWN_MIN_SEPARATION: f32 = 2.5;
+
+fn initial_respawn_seed() -> u32 {
+    let time = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    let mixed = time as u64 ^ (time >> 64) as u64 ^ u64::from(std::process::id());
+    (mixed as u32 ^ (mixed >> 32) as u32).max(1)
+}
+
+fn next_respawn_random(state: &mut u32) -> u32 {
+    let mut value = *state;
+    value ^= value << 13;
+    value ^= value >> 17;
+    value ^= value << 5;
+    *state = value.max(1);
+    *state
+}
+
+fn random_respawn_candidate(
+    candidates: &[usize],
+    previous: Option<usize>,
+    rng: &mut u32,
+) -> Option<usize> {
+    if candidates.is_empty() {
+        return None;
+    }
+    let available = candidates
+        .iter()
+        .copied()
+        .filter(|candidate| Some(*candidate) != previous)
+        .collect::<Vec<_>>();
+    let candidates = if available.is_empty() {
+        candidates
+    } else {
+        &available
+    };
+    let length = u32::try_from(candidates.len()).ok()?;
+    let largest_even_range = u32::MAX - (u32::MAX % length);
+    let value = loop {
+        let value = next_respawn_random(rng);
+        if value <= largest_even_range {
+            break value;
+        }
+    };
+    Some(candidates[((value - 1) % length) as usize])
+}
+
+fn choose_valid_respawn_index(
+    valid_candidates: &[(usize, bool)],
+    previous: Option<usize>,
+    rng: &mut u32,
+) -> Option<usize> {
+    let obscured = valid_candidates
+        .iter()
+        .filter(|(_, blocked)| *blocked)
+        .map(|(index, _)| *index)
+        .collect::<Vec<_>>();
+    let candidates = if obscured.is_empty() {
+        valid_candidates
+            .iter()
+            .map(|(index, _)| *index)
+            .collect::<Vec<_>>()
+    } else {
+        obscured
+    };
+    random_respawn_candidate(&candidates, previous, rng)
+}
 
 fn tracking_spawn_candidates(player_position: Vec3) -> Vec<Vec3> {
     let mut candidates = Vec::with_capacity(TRACKING_SPAWN_RADII.len() * 24);
@@ -132,6 +201,8 @@ pub struct Combat {
     pub kills: u32,
     pub spawn_cursor: usize,
     pub arena_scale: f32,
+    respawn_rng: u32,
+    last_respawn_points: Vec<Option<usize>>,
 }
 
 impl Default for Combat {
@@ -148,6 +219,7 @@ impl Default for Combat {
 
 impl Combat {
     pub fn new(targets: Vec<Bot>) -> Self {
+        let last_respawn_points = vec![None; targets.len()];
         Self {
             targets,
             last_shot: Shot::default(),
@@ -158,7 +230,14 @@ impl Combat {
             kills: 0,
             spawn_cursor: 0,
             arena_scale: 1.0,
+            respawn_rng: initial_respawn_seed(),
+            last_respawn_points,
         }
+    }
+
+    /// Fixes the Free Training respawn sequence for deterministic tests.
+    pub fn set_respawn_seed(&mut self, seed: u32) {
+        self.respawn_rng = seed.max(1);
     }
 
     pub fn configure_bots(&mut self, count: u32, behavior_setting: u8) {
@@ -241,6 +320,7 @@ impl Combat {
                 bot
             })
             .collect();
+        self.last_respawn_points = vec![None; self.targets.len()];
     }
 
     pub fn configure_tracking_bots(
@@ -321,30 +401,30 @@ impl Combat {
                 self.targets[index].respawn(position);
                 if tracking_aim {
                     self.targets[index].align_tracking_to_player(player_position, view_right);
+                    self.spawn_cursor = spawn_index + 1;
+                } else {
+                    if self.last_respawn_points.len() < self.targets.len() {
+                        self.last_respawn_points.resize(self.targets.len(), None);
+                    }
+                    self.last_respawn_points[index] = Some(spawn_index);
                 }
                 positions[index] = Some(position);
-                self.spawn_cursor = if tracking_aim {
-                    spawn_index + 1
-                } else {
-                    (spawn_index + 1) % RESPAWN_POINTS.len()
-                };
             }
         }
     }
 
     fn choose_respawn(
-        &self,
+        &mut self,
         bot_index: usize,
         player_position: Vec3,
         walls: &[Aabb],
         positions: &[Option<Vec3>],
     ) -> Option<(usize, Vec3)> {
         let eye = player_eye_position(player_position);
-        (0..RESPAWN_POINTS.len())
-            .map(|offset| ((self.spawn_cursor + offset) % RESPAWN_POINTS.len(), offset))
-            .filter_map(|index| {
-                let (index, offset) = index;
-                let point = RESPAWN_POINTS[index];
+        let valid_candidates = RESPAWN_POINTS
+            .iter()
+            .enumerate()
+            .filter_map(|(index, point)| {
                 let position = Vec3::new(
                     point.x * self.arena_scale,
                     point.y,
@@ -352,13 +432,24 @@ impl Combat {
                 );
                 (horizontal_distance(position, player_position) >= BOT_MIN_RESPAWN_DISTANCE
                     && self.targets[bot_index].can_spawn_at(position, bot_index, walls, positions))
-                .then_some((index, offset, position))
+                .then_some((
+                    index,
+                    position,
+                    line_of_sight_blocked(eye, position + Vec3::Y, walls),
+                ))
             })
-            .min_by_key(|(_, offset, position)| {
-                let visible = !line_of_sight_blocked(eye, *position + Vec3::Y, walls);
-                (visible, *offset)
-            })
-            .map(|(index, _, position)| (index, position))
+            .collect::<Vec<_>>();
+        let selectable = valid_candidates
+            .iter()
+            .map(|(index, _, blocked)| (*index, *blocked))
+            .collect::<Vec<_>>();
+        let previous = self.last_respawn_points.get(bot_index).copied().flatten();
+        let selected = choose_valid_respawn_index(&selectable, previous, &mut self.respawn_rng)?;
+        let position = valid_candidates
+            .iter()
+            .find(|(index, _, _)| *index == selected)
+            .map(|(_, position, _)| *position)?;
+        Some((selected, position))
     }
 
     fn choose_tracking_respawn(
@@ -611,5 +702,101 @@ impl Combat {
             self.kills += u32::from(shot.killed);
         }
         shot
+    }
+}
+
+#[cfg(test)]
+mod respawn_selection_tests {
+    use super::*;
+
+    #[test]
+    fn only_obscured_valid_candidates_are_selected_when_available() {
+        let candidates = [(2, false), (5, true), (9, true)];
+        let mut rng = 0x1234_5678;
+        let selected = choose_valid_respawn_index(&candidates, None, &mut rng).unwrap();
+        assert!(selected == 5 || selected == 9);
+    }
+
+    #[test]
+    fn visible_candidates_are_used_when_no_valid_candidate_is_obscured() {
+        let candidates = [(2, false), (5, false), (9, false)];
+        let mut rng = 0x1234_5678;
+        let selected = choose_valid_respawn_index(&candidates, None, &mut rng).unwrap();
+        assert!(candidates.iter().any(|(index, _)| *index == selected));
+    }
+
+    #[test]
+    fn a_single_valid_candidate_is_always_selected() {
+        let mut rng = 0x1234_5678;
+        assert_eq!(
+            choose_valid_respawn_index(&[(7, false)], None, &mut rng),
+            Some(7)
+        );
+    }
+
+    #[test]
+    fn no_valid_candidates_returns_none() {
+        let mut rng = 0x1234_5678;
+        assert_eq!(choose_valid_respawn_index(&[], None, &mut rng), None);
+    }
+
+    #[test]
+    fn respawn_is_skipped_when_every_spawn_point_collides_with_a_wall() {
+        let mut combat = Combat::new(vec![Bot::new(Vec3::ZERO)]);
+        let walls = [Aabb::new(
+            Vec3::new(-30.0, 0.0, -30.0),
+            Vec3::new(30.0, 3.0, 30.0),
+        )];
+        assert_eq!(combat.choose_respawn(0, Vec3::ZERO, &walls, &[None]), None);
+    }
+
+    #[test]
+    fn actual_respawn_selection_prefers_a_valid_point_behind_cover() {
+        let mut combat = Combat::new(vec![Bot::new(Vec3::ZERO)]);
+        combat.set_respawn_seed(0x1234_5678);
+        let walls = [Aabb::new(
+            Vec3::new(-11.0, 0.0, -11.0),
+            Vec3::new(-9.0, 3.0, -9.0),
+        )];
+        let (_, position) = combat
+            .choose_respawn(0, Vec3::ZERO, &walls, &[None])
+            .unwrap();
+        assert!(line_of_sight_blocked(
+            player_eye_position(Vec3::ZERO),
+            position + Vec3::Y,
+            &walls
+        ));
+    }
+
+    #[test]
+    fn previous_candidate_is_avoided_unless_it_is_the_only_choice() {
+        let mut rng = 0x1234_5678;
+        assert_ne!(
+            choose_valid_respawn_index(&[(4, false), (8, false)], Some(4), &mut rng),
+            Some(4)
+        );
+        assert_eq!(
+            choose_valid_respawn_index(&[(4, false)], Some(4), &mut rng),
+            Some(4)
+        );
+    }
+
+    #[test]
+    fn fixed_seed_is_reproducible_and_samples_candidates_across_the_set() {
+        let candidates = (0..36).collect::<Vec<_>>();
+        let sample = |seed| {
+            let mut rng = seed;
+            (0..360)
+                .map(|_| random_respawn_candidate(&candidates, None, &mut rng).unwrap())
+                .collect::<Vec<_>>()
+        };
+        let first = sample(0x1234_5678);
+        assert_eq!(first, sample(0x1234_5678));
+        assert_ne!(first, sample(0x8765_4321));
+        let mut counts = [0; 36];
+        for index in first {
+            counts[index] += 1;
+        }
+        assert!(counts.iter().all(|count| (3..=20).contains(count)));
     }
 }

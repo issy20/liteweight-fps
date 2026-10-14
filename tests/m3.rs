@@ -146,13 +146,11 @@ fn hitscan_stops_at_wall_and_applies_single_target_damage() {
         physics::Aabb,
         simulation::combat::{Combat, Target},
     };
-    let mut c = Combat {
-        targets: vec![
-            Target::new(Vec3::new(0., 0., -5.)),
-            Target::new(Vec3::new(0., 0., -8.)),
-        ],
-        ..Combat::default()
-    };
+    let mut c = Combat::default();
+    c.targets = vec![
+        Target::new(Vec3::new(0., 0., -5.)),
+        Target::new(Vec3::new(0., 0., -8.)),
+    ];
     let origin = Vec3::new(0., 1., 0.);
     let wall = Aabb::new(Vec3::new(-2., 0., -3.), Vec3::new(2., 3., -2.));
     assert!(!c.shoot(origin, -Vec3::Z, &[wall], 25).hit);
