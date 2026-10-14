@@ -397,6 +397,8 @@ submission rates.
 - [M0 benchmark results](docs/m0-results.md)
 - [Distribution instructions](DISTRIBUTION.md)
 - [M8 release verification plan](docs/m8-plan.md)
+- [M8 verification procedure](docs/m8-verification.md)
+- [M8 verification results](docs/m8-results.md)
 
 Primary API references: [wgpu 24](https://docs.rs/wgpu/24.0.5/wgpu/),
 [winit 0.30](https://docs.rs/winit/0.30.13/winit/), and

@@ -7,6 +7,7 @@ M8は、実測に基づく性能レポート、OSごとの実機検証記録、�
 - 配布形態: ソース配布。利用者がRust stableツールチェーンでビルドする。バイナリを配布しないため、macOS公証・Windows Authenticodeなどの署名は不要。
 - リリース: Cargoのバージョンと一致する`v*`タグで、**ソースのみ**のドラフトGitHub Releaseを作成する（バイナリ添付なし）。
 - 検証: 4ターゲットのビルドとパッケージ生成スクリプトは、公開せずCIの内部検証として維持する。
+- 実機・性能の手順と結果: [docs/m8-verification.md](m8-verification.md) と [docs/m8-results.md](m8-results.md)。
 
 ## タスク
 
