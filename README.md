@@ -105,6 +105,10 @@ the same command:
 .\scripts\run.ps1    # Windows
 ```
 
+On success you should see the title screen:
+
+![liteweight-fps title screen](docs/images/title.png)
+
 ### Install the executable on your PATH (optional)
 
 Build once and install the binary into `~/.cargo/bin`:
