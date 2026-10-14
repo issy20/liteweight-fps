@@ -57,7 +57,7 @@ toolchain; no prebuilt or signed binaries are provided. See
    - Windows: install the MSVC Build Tools (Visual Studio "Desktop development with C++").
    - Linux (Debian/Ubuntu):
      ```sh
-     sudo apt install build-essential pkg-config libasound2-dev libwayland-dev libxkbcommon-dev
+     sudo apt install build-essential pkg-config libasound2-dev libwayland-dev libxkbcommon-dev libxkbcommon-x11-dev
      ```
 
 2. Install Rust stable:
@@ -112,7 +112,7 @@ On Linux, install a C compiler, `pkg-config`, ALSA development files, and the
 Wayland/XKB development libraries. For Debian or Ubuntu:
 
 ```sh
-sudo apt install build-essential pkg-config libasound2-dev libwayland-dev libxkbcommon-dev
+sudo apt install build-essential pkg-config libasound2-dev libwayland-dev libxkbcommon-dev libxkbcommon-x11-dev
 ```
 
 On macOS, install Xcode Command Line Tools. On Windows, install the MSVC Build

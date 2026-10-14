@@ -15,6 +15,8 @@ def metadata_packages(project_root):
         check=True,
         capture_output=True,
         text=True,
+        encoding='utf-8',
+        errors='replace',
     )
     packages = json.loads(metadata.stdout)['packages']
     dependencies = []

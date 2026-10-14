@@ -15,7 +15,7 @@
 Debian/Ubuntuでのビルド前提:
 
 ```sh
-sudo apt install build-essential pkg-config libasound2-dev libwayland-dev libxkbcommon-dev
+sudo apt install build-essential pkg-config libasound2-dev libwayland-dev libxkbcommon-dev libxkbcommon-x11-dev
 ```
 
 ## ビルドと起動
