@@ -1,7 +1,7 @@
 use liteweight_fps::engine::text::FontAtlas;
 use liteweight_fps::persistence::GameSettings;
 use liteweight_fps::simulation::{
-    game_mode::{SessionMode, TrainingSession, CHALLENGE_SECONDS},
+    game_mode::{SessionMode, TrainingSession},
     weapon::WeaponKind,
 };
 use liteweight_fps::ui::menu::{PauseMenuAction, PauseSelection, TitleMenuAction, TitleSelection};
@@ -267,11 +267,10 @@ fn gameplay_hud_text_fits_common_internal_resolutions_for_both_modes() {
     use liteweight_fps::simulation::game_mode::SessionMode;
     use liteweight_fps::simulation::weapon::WeaponKind;
     for viewport in [[1280, 720], [1920, 1080], [960, 540]] {
-        for mode in [SessionMode::FreeTraining, SessionMode::FiveMinuteChallenge] {
+        for mode in [SessionMode::FreeTraining, SessionMode::TrackingAim] {
             let mesh = liteweight_fps::ui::game_hud_text(
                 liteweight_fps::ui::GameHudInfo {
                     mode,
-                    remaining: Some(299.0),
                     weapon: WeaponKind::AssaultRifle,
                     ammo: 30,
                     magazine: 30,
@@ -307,7 +306,6 @@ fn infinite_ammo_hud_renders_infinity_and_hides_magazine_digits() {
 
     let info = |infinite_ammo| GameHudInfo {
         mode: SessionMode::FreeTraining,
-        remaining: None,
         weapon: WeaponKind::AssaultRifle,
         ammo: 30,
         magazine: 30,
@@ -453,19 +451,8 @@ fn fullscreen_setting_is_a_toggle_menu_item_and_is_shown_in_settings() {
 }
 
 #[test]
-fn challenge_timer_clamps_at_zero_and_completes_only_once() {
-    let mut session = TrainingSession::new(SessionMode::FiveMinuteChallenge);
-    assert_eq!(session.remaining_seconds(), Some(CHALLENGE_SECONDS));
-    assert!(!session.advance(299.5));
-    assert_eq!(session.remaining_seconds(), Some(0.5));
-    assert!(session.advance(2.0));
-    assert_eq!(session.remaining_seconds(), Some(0.0));
-    assert!(!session.advance(1.0));
-}
-
-#[test]
 fn session_results_track_rates_and_weapon_breakdown_with_zero_safe_rates() {
-    let mut session = TrainingSession::new(SessionMode::FiveMinuteChallenge);
+    let mut session = TrainingSession::new(SessionMode::FreeTraining);
     assert_eq!(session.stats().accuracy(), 0.0);
     assert_eq!(session.stats().headshot_rate(), 0.0);
 
@@ -486,7 +473,7 @@ fn session_results_track_rates_and_weapon_breakdown_with_zero_safe_rates() {
 }
 
 #[test]
-fn challenge_result_history_round_trips_and_keeps_newest_entries() {
+fn saved_session_result_history_round_trips_and_keeps_newest_entries() {
     let path = std::env::temp_dir().join(format!(
         "liteweight-fps-results-{}.json",
         std::process::id()
@@ -552,32 +539,17 @@ fn saving_after_corrupt_result_history_quarantines_it_and_recovers() {
 }
 
 #[test]
-fn free_training_has_no_countdown_or_automatic_completion() {
-    let mut session = TrainingSession::new(SessionMode::FreeTraining);
-    assert_eq!(session.remaining_seconds(), None);
-    assert!(!session.advance(10_000.0));
-    assert!(!session.is_complete());
-}
-
-#[test]
-fn infinite_ammo_setting_is_ignored_during_the_five_minute_challenge() {
+fn only_free_training_uses_the_infinite_ammo_setting() {
     use liteweight_fps::simulation::game_mode::SessionMode;
     assert!(SessionMode::FreeTraining.infinite_ammo_enabled(true));
     assert!(!SessionMode::FreeTraining.infinite_ammo_enabled(false));
-    assert!(!SessionMode::FiveMinuteChallenge.infinite_ammo_enabled(true));
     assert!(SessionMode::TrackingAim.infinite_ammo_enabled(false));
-    let mut tracking = TrainingSession::new(SessionMode::TrackingAim);
-    assert_eq!(tracking.remaining_seconds(), None);
-    assert!(!tracking.advance(10_000.0));
-    assert!(!tracking.is_complete());
 }
 
 #[test]
-fn title_menu_selects_both_training_modes_settings_and_quit() {
+fn title_menu_selects_two_training_modes_settings_and_quit() {
     let mut menu = TitleSelection::default();
     assert_eq!(menu.activate(), TitleMenuAction::FreeTraining);
-    menu.move_down();
-    assert_eq!(menu.activate(), TitleMenuAction::FiveMinuteChallenge);
     menu.move_down();
     assert_eq!(menu.activate(), TitleMenuAction::TrackingAim);
     menu.move_down();
@@ -794,7 +766,6 @@ fn tracking_aim_disables_camera_and_weapon_recoil() {
     assert!(SessionMode::FreeTraining.recoil_enabled());
     assert!(!SessionMode::TrackingAim.hip_fire_spread_enabled());
     assert!(SessionMode::FreeTraining.hip_fire_spread_enabled());
-    assert!(SessionMode::FiveMinuteChallenge.hip_fire_spread_enabled());
 }
 
 #[test]

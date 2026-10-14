@@ -1074,11 +1074,10 @@ pub fn title_overlay(mesh: &mut Scene, selected: usize, aspect: f32) {
         aspect,
     );
     for (index, (bottom, height)) in [
-        (0.14, 0.19),
-        (-0.11, 0.19),
-        (-0.30, 0.19),
-        (-0.49, 0.19),
-        (-0.68, 0.19),
+        (0.085, 0.19),
+        (-0.135, 0.19),
+        (-0.355, 0.19),
+        (-0.575, 0.19),
     ]
     .into_iter()
     .enumerate()
@@ -1153,11 +1152,10 @@ pub fn title_text_into(mesh: &mut TextMesh, selected: usize, viewport: [u32; 2])
         [0.59, 0.68, 0.71, 1.0],
     );
     for (index, (label, y)) in [
-        ("FREE TRAINING", 0.235),
-        ("5-MINUTE CHALLENGE", -0.015),
-        ("TRACKING AIM", -0.205),
-        ("SETTINGS", -0.395),
-        ("QUIT GAME", -0.585),
+        ("FREE TRAINING", 0.18),
+        ("TRACKING AIM", -0.04),
+        ("SETTINGS", -0.26),
+        ("QUIT GAME", -0.48),
     ]
     .into_iter()
     .enumerate()
@@ -1177,28 +1175,6 @@ pub fn title_text_into(mesh: &mut TextMesh, selected: usize, viewport: [u32; 2])
     );
 }
 
-pub fn results_overlay(mesh: &mut Scene, aspect: f32) {
-    modal_backdrop(mesh, aspect);
-    rect_alpha(
-        mesh,
-        -0.56 * aspect,
-        -0.83,
-        1.12 * aspect,
-        1.66,
-        [0.025, 0.036, 0.047, 0.98],
-        aspect,
-    );
-    rect(
-        mesh,
-        -0.56 * aspect,
-        -0.83,
-        0.008 * aspect,
-        1.66,
-        [0.95, 0.53, 0.19],
-        aspect,
-    );
-}
-
 fn modal_backdrop(mesh: &mut Scene, aspect: f32) {
     rect_alpha(
         mesh,
@@ -1211,74 +1187,8 @@ fn modal_backdrop(mesh: &mut Scene, aspect: f32) {
     );
 }
 
-pub fn results_text(
-    stats: crate::simulation::game_mode::MatchStats,
-    viewport: [u32; 2],
-) -> TextMesh {
-    let mut mesh = TextMesh::default();
-    results_text_into(&mut mesh, stats, viewport);
-    mesh
-}
-
-pub fn results_text_into(
-    mesh: &mut TextMesh,
-    stats: crate::simulation::game_mode::MatchStats,
-    viewport: [u32; 2],
-) {
-    mesh.clear();
-    let font = FontAtlas::shared();
-    let mut line = |text: &str, y_ndc: f32, size: f32, color: [f32; 4]| {
-        append_centered_text_line(mesh, font, text, y_ndc, size, viewport, color);
-    };
-    let bright = [0.90, 0.93, 0.93, 1.0];
-    let muted = [0.62, 0.71, 0.74, 1.0];
-    line("CHALLENGE COMPLETE", 0.65, 0.065, [0.98, 0.72, 0.39, 1.0]);
-    line(&format!("KILLS  {}", stats.kills), 0.47, 0.043, bright);
-    line(
-        &format!("SHOTS  {}     HITS  {}", stats.shots, stats.hits),
-        0.34,
-        0.036,
-        bright,
-    );
-    line(
-        &format!("ACCURACY  {:.1}%", stats.accuracy() * 100.0),
-        0.22,
-        0.036,
-        bright,
-    );
-    line(
-        &format!(
-            "HEADSHOTS  {}     RATE  {:.1}%",
-            stats.headshots,
-            stats.headshot_rate() * 100.0
-        ),
-        0.10,
-        0.036,
-        bright,
-    );
-    line("WEAPON BREAKDOWN", -0.08, 0.031, [0.98, 0.72, 0.39, 1.0]);
-    for (weapon, label, y) in [
-        (WeaponKind::Pistol, "PISTOL", -0.20),
-        (WeaponKind::AssaultRifle, "ASSAULT RIFLE", -0.30),
-        (WeaponKind::Sniper, "SNIPER", -0.40),
-    ] {
-        let weapon_stats = stats.for_weapon(weapon);
-        line(
-            &format!(
-                "{label}  K {}  H {} / S {}",
-                weapon_stats.kills, weapon_stats.hits, weapon_stats.shots
-            ),
-            y,
-            0.029,
-            muted,
-        );
-    }
-    line("ENTER RETRY      ESC MAIN MENU", -0.65, 0.027, muted);
-}
-
 pub struct GameHudInfo {
     pub mode: crate::simulation::game_mode::SessionMode,
-    pub remaining: Option<f32>,
     pub weapon: WeaponKind,
     pub ammo: u32,
     pub magazine: u32,
@@ -1301,19 +1211,15 @@ pub fn game_hud_text_into(mesh: &mut TextMesh, info: GameHudInfo, viewport: [u32
     };
     let muted = [0.79, 0.84, 0.84, 1.0];
     let status = match info.mode {
-        crate::simulation::game_mode::SessionMode::FreeTraining => "FREE TRAINING".to_owned(),
-        crate::simulation::game_mode::SessionMode::FiveMinuteChallenge => {
-            let seconds = info.remaining.unwrap_or(0.0).ceil() as u32;
-            format!("TIME  {:02}:{:02}", seconds / 60, seconds % 60)
-        }
-        crate::simulation::game_mode::SessionMode::TrackingAim => "TRACKING AIM".to_owned(),
+        crate::simulation::game_mode::SessionMode::FreeTraining => "FREE TRAINING",
+        crate::simulation::game_mode::SessionMode::TrackingAim => "TRACKING AIM",
     };
     let ammo_text = if info.infinite_ammo {
         "∞".to_owned()
     } else {
         format!("{}/{}", info.ammo, info.magazine)
     };
-    line(&status, 0.97, 0.034, [0.98, 0.72, 0.39, 1.0]);
+    line(status, 0.97, 0.034, [0.98, 0.72, 0.39, 1.0]);
     line(
         &format!(
             "{}   AMMO {}   KILLS {}",
@@ -2468,7 +2374,7 @@ mod tests {
 
     #[test]
     fn title_menu_highlights_cover_each_larger_menu_label() {
-        for (selected, text_top, text_height) in [(0, 0.235, 0.047), (4, -0.585, 0.047)] {
+        for (selected, text_top, text_height) in [(0, 0.18, 0.047), (3, -0.48, 0.047)] {
             let mut mesh = crate::Scene {
                 vertices: Vec::new(),
                 indices: Vec::new(),

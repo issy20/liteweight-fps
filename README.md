@@ -9,7 +9,7 @@ movement, aiming, and weapon handling.
 
 ## Game features
 
-- **Free Training** and a **5-Minute Challenge** with locally saved results.
+- **Free Training** and **Tracking Aim** practice modes.
 - First-person mouse look, WASD movement, sprinting, jumping, and collision
   against arena walls and cover using AABB approximations.
 - Three weapons with hitscan firing, ADS, recoil, reloads, and weapon switching:
@@ -26,8 +26,7 @@ movement, aiming, and weapon handling.
   movement uses the fixed simulation timestep.
 - Separate head and body hitboxes. A defeated BOT respawns after two seconds at
   a free location at least 8 m from the player.
-- Session stats include hits, headshots, and kills. Challenge results include
-  overall and per-weapon breakdowns; the latest 50 results are saved locally.
+- Session stats track hits, headshots, and kills by weapon.
 - Settings for mouse and ADS sensitivity, FOV, vertical inversion, remappable
   gameplay keys, window resolution, internal resolution scale, fullscreen, VSync,
   FPS limit, Free Training infinite ammo, audio volume, and BOT parameters.

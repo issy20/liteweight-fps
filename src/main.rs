@@ -131,7 +131,6 @@ struct App {
     title_screen: bool,
     settings_menu: bool,
     settings_from_title: bool,
-    results_screen: bool,
     title_selection: TitleSelection,
     pause_selection: PauseSelection,
     binding_selection: usize,
@@ -303,7 +302,6 @@ impl App {
         self.settings_menu = false;
         self.settings_from_title = false;
         self.title_screen = true;
-        self.results_screen = false;
         self.title_selection = TitleSelection::default();
         self.capture_requested = false;
         self.release_capture();
@@ -349,7 +347,6 @@ impl App {
         self.title_screen = false;
         self.settings_menu = false;
         self.settings_from_title = false;
-        self.results_screen = false;
         self.capture_requested = true;
         self.try_capture();
         self.clock = Instant::now();
@@ -659,8 +656,7 @@ impl ApplicationHandler for App {
             WindowEvent::KeyboardInput { event, .. } => {
                 self.window_focused = true;
                 let pressed = event.state == ElementState::Pressed;
-                let gameplay_active =
-                    !self.title_screen && !self.settings_menu && !self.results_screen;
+                let gameplay_active = !self.title_screen && !self.settings_menu;
                 if self.benchmark.is_none() && self.waiting_for_binding {
                     if pressed && !event.repeat {
                         if let PhysicalKey::Code(code) = event.physical_key {
@@ -699,9 +695,6 @@ impl ApplicationHandler for App {
                                 TitleMenuAction::FreeTraining => {
                                     self.begin_session(SessionMode::FreeTraining)
                                 }
-                                TitleMenuAction::FiveMinuteChallenge => {
-                                    self.begin_session(SessionMode::FiveMinuteChallenge)
-                                }
                                 TitleMenuAction::TrackingAim => {
                                     self.begin_session(SessionMode::TrackingAim)
                                 }
@@ -714,18 +707,6 @@ impl ApplicationHandler for App {
                                 }
                                 TitleMenuAction::Quit => self.finish(event_loop, false),
                             }
-                        }
-                        PhysicalKey::Code(KeyCode::Escape)
-                            if pressed && !event.repeat && self.results_screen =>
-                        {
-                            self.results_screen = false;
-                            self.title_screen = true;
-                            self.title_selection = TitleSelection::default();
-                        }
-                        PhysicalKey::Code(KeyCode::Enter)
-                            if pressed && !event.repeat && self.results_screen =>
-                        {
-                            self.begin_session(self.session.mode());
                         }
                         PhysicalKey::Code(code)
                             if pressed
@@ -741,7 +722,7 @@ impl ApplicationHandler for App {
                             } else {
                                 self.capture_requested = false;
                                 self.release_capture();
-                                if !self.title_screen && !self.results_screen {
+                                if !self.title_screen {
                                     self.pause_selection = PauseSelection::default();
                                     self.settings_from_title = false;
                                     self.settings_menu = true;
@@ -869,7 +850,6 @@ impl ApplicationHandler for App {
                                 && !event.repeat
                                 && !self.title_screen
                                 && !self.settings_menu
-                                && !self.results_screen
                                 && code
                                     == binding_key_to_code(
                                         self.settings.key_bindings.get(BindingAction::Jump),
@@ -933,8 +913,7 @@ impl ApplicationHandler for App {
                 let now = Instant::now();
                 let dt = now.duration_since(self.clock).as_secs_f64();
                 self.clock = now;
-                let gameplay_active =
-                    !self.title_screen && !self.settings_menu && !self.results_screen;
+                let gameplay_active = !self.title_screen && !self.settings_menu;
                 if Input::should_simulate_gameplay(gameplay_active, self.window_focused)
                     && self.benchmark.is_none()
                 {
@@ -965,17 +944,6 @@ impl ApplicationHandler for App {
                         let (held, pressed) = self.fire_input.take_state();
                         if held || pressed {
                             self.fire(held, pressed);
-                        }
-                        if self.session.advance(1.0 / 60.0) {
-                            if let Err(error) =
-                                liteweight_fps::persistence::save_result(self.session.stats())
-                            {
-                                self.set_notice("RESULTS NOT SAVED - CHECK STORAGE", &error);
-                            }
-                            self.results_screen = true;
-                            self.capture_requested = false;
-                            self.release_capture();
-                            break;
                         }
                     }
                     // 60Hz更新の間でも押下を受け付ける。冷却時間の更新は固定ステップ。
@@ -1027,8 +995,6 @@ impl ApplicationHandler for App {
                             self.title_selection.selected_index(),
                             aspect,
                         );
-                    } else if self.results_screen {
-                        liteweight_fps::ui::results_overlay(&mut self.hud_mesh, aspect);
                     }
                     liteweight_fps::ui::world_mesh_into(&mut self.world_mesh, &self.combat);
                     r.update_extras(&self.world_mesh, &self.hud_mesh);
@@ -1036,12 +1002,6 @@ impl ApplicationHandler for App {
                         liteweight_fps::ui::title_text_into(
                             &mut self.text_mesh,
                             self.title_selection.selected_index(),
-                            [w, h],
-                        );
-                    } else if self.results_screen {
-                        liteweight_fps::ui::results_text_into(
-                            &mut self.text_mesh,
-                            self.session.stats(),
                             [w, h],
                         );
                     } else if self.settings_menu {
@@ -1059,7 +1019,6 @@ impl ApplicationHandler for App {
                             &mut self.text_mesh,
                             liteweight_fps::ui::GameHudInfo {
                                 mode: self.session.mode(),
-                                remaining: self.session.remaining_seconds(),
                                 weapon: self.weapons.active_kind(),
                                 ammo: self.weapons.active().ammo,
                                 magazine: self.weapons.active().data.magazine,
@@ -1073,8 +1032,6 @@ impl ApplicationHandler for App {
                     if let Some(notice) = &notice {
                         let notice_y = if self.title_screen {
                             0.34
-                        } else if self.results_screen {
-                            0.55
                         } else if self.settings_menu {
                             0.575
                         } else {
@@ -1205,7 +1162,7 @@ fn main() {
     let start = Instant::now();
     let args: Vec<_> = std::env::args().skip(1).collect();
     if args == ["--help"] {
-        println!("liteweight-fps: タイトル画面でFree Trainingまたは5-Minute Challengeを選択。\nWASD:移動 Shift:ダッシュ Space:ジャンプ LMB:射撃 RMB:ADS R:リロード Esc:ポーズ（メニューから再開・終了）\n--smoke: 自動リサイズ確認後に終了\n--benchmark [M0と同じ引数]: M0シーンで描画基盤の回帰測定（--mode inputは非対応）\n1/2/3:拳銃/AR/スナイパー切替 LMB:射撃 RMB:ADS R:リロード");
+        println!("liteweight-fps: タイトル画面でFree TrainingまたはTracking Aimを選択。\nWASD:移動 Shift:ダッシュ Space:ジャンプ LMB:射撃 RMB:ADS R:リロード Esc:ポーズ（メニューから再開・終了）\n--smoke: 自動リサイズ確認後に終了\n--benchmark [M0と同じ引数]: M0シーンで描画基盤の回帰測定（--mode inputは非対応）\n1/2/3:拳銃/AR/スナイパー切替 LMB:射撃 RMB:ADS R:リロード");
         return;
     }
     let smoke = args == ["--smoke"];
@@ -1278,7 +1235,6 @@ fn main() {
         title_screen,
         settings_menu: false,
         settings_from_title: false,
-        results_screen: false,
         title_selection: TitleSelection::default(),
         pause_selection: PauseSelection::default(),
         binding_selection: 0,
