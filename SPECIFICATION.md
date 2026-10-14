@@ -233,26 +233,40 @@ Free Trainingのルール設定として無限弾薬のオン／オフを設け�
 - 音声ライブラリ、UI方式、設定シリアライズ形式は最小の動作検証後に確定。
 
 ### 10.2 モジュール境界
+
+以下は現状の主要ファイル配置と責務を示す。ディレクトリ名は将来の分離案ではなく、実際に存在する構成である。物理・スポーンなど、専用モジュールへまだ分離していない責務は現在の配置先に記載する。
+
 ```text
 liteweight-fps/
 ├── Cargo.toml
 ├── Cargo.lock
 ├── assets/
-│   ├── shaders/
-│   ├── audio/
-│   └── models/
+│   ├── fonts/             # embedded UI font and license
+│   └── shaders/           # scene, blit, text shaders
 ├── src/
-│   ├── main.rs
-│   ├── engine/       # renderer, camera, input, time, audio
-│   ├── simulation/   # fixed-step loop, player, weapon, bot, game_mode
-│   ├── physics/      # collision, raycast, hitbox
-│   ├── world/        # map, spawn, waypoint
-│   ├── ui/           # hud, menus, settings
-│   └── persistence/  # local config
+│   ├── main.rs             # app orchestration, window events, input-to-game flow
+│   ├── lib.rs              # benchmark harness and shared public entry points
+│   ├── bin/
+│   │   ├── bench-wgpu.rs
+│   │   └── bench-miniquad.rs
+│   ├── engine/             # renderer, window, layout, audio, text rendering
+│   ├── simulation/
+│   │   ├── player.rs        # input state and player movement
+│   │   ├── time.rs         # fixed-step clock
+│   │   ├── weapon.rs       # weapon state and firing behavior
+│   │   ├── bot.rs          # BOT behavior, hitboxes, and related ray tests
+│   │   ├── combat.rs       # hitscan combat and BOT spawn/respawn selection
+│   │   └── game_mode.rs    # per-mode gameplay rules
+│   ├── physics/mod.rs      # AABB collision and ray-distance primitive
+│   ├── world/mod.rs        # arena/training-range geometry and colliders
+│   ├── ui/                 # HUD geometry/text and menus
+│   └── persistence.rs      # local game settings and key bindings
+├── scripts/                # benchmark, packaging, and dependency-notice tools
 ├── tests/
-├── benches/
 └── .github/workflows/
 ```
+
+BOTのヒットボックスとスポーン候補は現時点で`simulation/bot.rs`と`simulation/combat.rs`にあり、独立した`physics`や`spawn`モジュールには分離していない。カメラ行列やベンチマークの共通型は`lib.rs`、UI上の設定表示は`ui/`、設定データと保存は`persistence.rs`が担当する。
 
 ### 10.3 実行ループ
 - 入力イベントを取得し、入力状態とイベントを管理。
