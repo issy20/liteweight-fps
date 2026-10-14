@@ -54,6 +54,7 @@ pub struct FontAtlas {
     pixels: Vec<u8>,
     glyphs: [Glyph; GLYPH_COUNT],
     ascent: f32,
+    descent: f32,
 }
 
 impl FontAtlas {
@@ -118,6 +119,7 @@ impl FontAtlas {
             pixels,
             glyphs,
             ascent: scaled.ascent(),
+            descent: scaled.descent(),
         }
     }
 
@@ -127,6 +129,14 @@ impl FontAtlas {
 
     pub fn pixels(&self) -> &[u8] {
         &self.pixels
+    }
+
+    /// Line height (ascent minus descent) in pixels for the given font size.
+    pub fn line_height_px(&self, font_px: f32) -> f32 {
+        if !font_px.is_finite() || font_px <= 0.0 {
+            return 0.0;
+        }
+        (self.ascent - self.descent) * font_px / FONT_SIZE
     }
 
     /// Build one indexed quad per glyph. Coordinates are pixels from the top-left.

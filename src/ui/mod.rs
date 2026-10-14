@@ -1170,7 +1170,14 @@ pub fn title_text_into(mesh: &mut TextMesh, selected: usize, viewport: [u32; 2])
         } else {
             [0.82, 0.87, 0.89, 1.0]
         };
-        line(label, y, 0.047, color);
+        // Center the label on its highlight row; the layout anchors at the top.
+        let height = viewport[1] as f32;
+        let line_ndc = if height > 0.0 {
+            font.line_height_px(height * 0.047) / height
+        } else {
+            0.0
+        };
+        line(label, y + line_ndc, 0.047, color);
     }
     line(
         "UP / DOWN MOVE      ENTER SELECT",
@@ -2468,6 +2475,29 @@ mod tests {
                 .fold(f32::NEG_INFINITY, f32::max);
             assert!(bottom < text_top - text_height * 2.0);
             assert!(top > text_top);
+        }
+    }
+
+    #[test]
+    fn title_menu_label_is_vertically_centered_in_its_highlight() {
+        let viewport = [1280, 720];
+        let orange = [1.0, 0.65, 0.24, 1.0];
+        for (selected, row_center) in [(0usize, 0.18_f32), (1, -0.04), (2, -0.26), (3, -0.48)] {
+            let mesh = super::title_text(selected, viewport);
+            let ys = mesh
+                .vertices
+                .iter()
+                .filter(|vertex| vertex.color == orange)
+                .map(|vertex| vertex.position[1])
+                .collect::<Vec<_>>();
+            assert!(!ys.is_empty(), "selected={selected}");
+            let min = ys.iter().copied().fold(f32::INFINITY, f32::min);
+            let max = ys.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+            let center = (min + max) * 0.5;
+            assert!(
+                (center - row_center).abs() < 0.02,
+                "selected={selected} center={center} row={row_center}"
+            );
         }
     }
 }

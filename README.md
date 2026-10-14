@@ -107,7 +107,7 @@ the same command:
 
 On success you should see the title screen:
 
-![liteweight-fps title screen](docs/images/title.png)
+![liteweight-fps title screen](docs/images/title.jpg)
 
 ### Install the executable on your PATH (optional)
 
