@@ -558,6 +558,46 @@ fn wall_collision_stops_movement_with_sliding() {
 }
 
 #[test]
+fn collision_radius_tuning_changes_player_clearance_from_walls() {
+    let wall = Aabb::new(Vec3::new(-10.0, 0.0, -1.0), Vec3::new(10.0, 4.0, 1.0));
+    let mut player = Player::new();
+    player.position.z = 3.0;
+    player.movement_tuning.collision_radius = 0.5;
+
+    for _ in 0..120 {
+        player.move_with_collision(
+            &[wall],
+            input(false, false, true, false, false, false),
+            1.0 / 60.0,
+        );
+    }
+
+    assert!(
+        (1.0 + 0.5..1.6).contains(&player.position.z),
+        "expected clearance to follow the configured radius, got {}",
+        player.position.z
+    );
+}
+
+#[test]
+fn contact_margin_tuning_adds_clearance_without_changing_collision_radius() {
+    let wall = Aabb::new(Vec3::new(-10.0, 0.0, -1.0), Vec3::new(10.0, 4.0, 1.0));
+    let mut player = Player::new();
+    player.position.z = 3.0;
+    player.movement_tuning.contact_margin = 0.2;
+
+    for _ in 0..120 {
+        player.move_with_collision(
+            &[wall],
+            input(false, false, true, false, false, false),
+            1.0 / 60.0,
+        );
+    }
+
+    assert!((1.0 + PLAYER_RADIUS + 0.2..1.6).contains(&player.position.z));
+}
+
+#[test]
 fn arena_colliders_cover_floor_walls_and_covers() {
     let colliders = world::arena_colliders();
     assert!(colliders[1..5].iter().all(|wall| wall.max.y == 12.0));

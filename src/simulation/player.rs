@@ -31,6 +31,10 @@ pub struct MovementTuning {
     pub step_height: f32,
     /// Maximum drop followed while staying grounded on stairs and ramps.
     pub ground_snap_distance: f32,
+    /// Horizontal player collision radius, excluding the additional contact margin.
+    pub collision_radius: f32,
+    /// Extra horizontal clearance from walls and other collision surfaces.
+    pub contact_margin: f32,
 }
 
 impl Default for MovementTuning {
@@ -43,6 +47,8 @@ impl Default for MovementTuning {
             air_control: 1.0,
             step_height: DEFAULT_STEP_HEIGHT,
             ground_snap_distance: DEFAULT_GROUND_SNAP_DISTANCE,
+            collision_radius: PLAYER_RADIUS,
+            contact_margin: 0.0,
         }
     }
 }
@@ -149,6 +155,10 @@ impl Player {
             self.foot_height() + PLAYER_HEIGHT * 0.5,
             self.position.z,
         )
+    }
+    fn effective_collision_radius(&self) -> f32 {
+        self.movement_tuning.collision_radius.max(0.0)
+            + self.movement_tuning.contact_margin.max(0.0)
     }
     /// 相対角度を視点へ反映する。感度倍率は呼び出し側で掛ける。
     pub fn look(&mut self, dx: f32, dy: f32) {
@@ -265,7 +275,7 @@ impl Player {
             }
             let old_position = self.position;
             self.position[axis] += horizontal[axis] * dt;
-            if Self::collides(colliders, self.body_center()) {
+            if self.collides(colliders, self.body_center()) {
                 let current_foot = self.foot_height();
                 let step_top = colliders
                     .iter()
@@ -273,14 +283,14 @@ impl Player {
                         collider.min.y <= current_foot + COLLISION_EPSILON
                             && collider.max.y > current_foot + COLLISION_EPSILON
                             && collider.max.y <= current_foot + self.movement_tuning.step_height
-                            && Self::overlaps_player_footprint(collider, self.position)
+                            && self.overlaps_player_footprint(collider, self.position)
                     })
                     .map(|collider| collider.max.y)
                     .max_by(f32::total_cmp);
                 if self.on_ground && !input.jump {
                     if let Some(step_top) = step_top {
                         self.position.y += step_top - current_foot;
-                        if !Self::collides(colliders, self.body_center()) {
+                        if !self.collides(colliders, self.body_center()) {
                             self.velocity.y = 0.0;
                             continue;
                         }
@@ -298,7 +308,7 @@ impl Player {
                     collider.max.y <= current_foot + COLLISION_EPSILON
                         && collider.max.y
                             >= current_foot - self.movement_tuning.ground_snap_distance
-                        && Self::overlaps_player_footprint(collider, self.position)
+                        && self.overlaps_player_footprint(collider, self.position)
                 })
                 .map(|collider| collider.max.y)
                 .max_by(f32::total_cmp);
@@ -312,7 +322,7 @@ impl Player {
             self.velocity.y -= self.movement_tuning.gravity * dt;
         }
         self.position.y += self.velocity.y * dt;
-        if Self::collides(colliders, self.body_center()) {
+        if self.collides(colliders, self.body_center()) {
             self.position.y -= self.velocity.y * dt;
             // 落下中の衝突は着地。上昇中の衝突は天井に当たった場合。
             if self.velocity.y < 0. {
@@ -329,7 +339,7 @@ impl Player {
             landed: !was_grounded && self.on_ground,
         }
     }
-    fn collides(colliders: &[Aabb], center: Vec3) -> bool {
+    fn collides(&self, colliders: &[Aabb], center: Vec3) -> bool {
         let half = PLAYER_HEIGHT * 0.5;
         colliders.iter().any(|c| {
             let cy_min = center.y - half;
@@ -342,16 +352,17 @@ impl Player {
             let dx = center.x - cx;
             let dz = center.z - cz;
             // f32の丸め誤差（壁面からちょうど半径の距離）で接触扱いになるのを防ぐ。
-            let r = PLAYER_RADIUS - COLLISION_EPSILON;
+            let r = (self.effective_collision_radius() - COLLISION_EPSILON).max(0.0);
             dx * dx + dz * dz < r * r
         })
     }
 
-    fn overlaps_player_footprint(collider: &Aabb, position: Vec3) -> bool {
+    fn overlaps_player_footprint(&self, collider: &Aabb, position: Vec3) -> bool {
         let closest_x = position.x.clamp(collider.min.x, collider.max.x);
         let closest_z = position.z.clamp(collider.min.z, collider.max.z);
         let dx = position.x - closest_x;
         let dz = position.z - closest_z;
-        dx * dx + dz * dz < PLAYER_RADIUS * PLAYER_RADIUS
+        let radius = self.effective_collision_radius();
+        dx * dx + dz * dz < radius * radius
     }
 }
