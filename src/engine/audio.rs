@@ -16,6 +16,8 @@ pub enum Sound {
     Hit,
     Head,
     Kill,
+    Footstep,
+    Land,
 }
 impl Audio {
     pub fn new() -> Result<Self, String> {
@@ -28,6 +30,8 @@ impl Audio {
             (800., 0.05, 0.0),
             (1400., 0.07, 0.0),
             (520., 0.16, 0.0),
+            (92., 0.085, 0.72),
+            (58., 0.16, 0.78),
         ]
         .into_iter()
         .map(|(frequency, duration, noise)| {

@@ -10,7 +10,7 @@ use liteweight_fps::{
     simulation::{
         combat::Combat,
         game_mode::{SessionMode, TrainingSession},
-        player::Input,
+        player::{FootstepClock, Input},
         time::FixedStep,
         weapon::{FireInput, Loadout, ShotSpreadRng, WeaponKind},
         Player,
@@ -121,6 +121,7 @@ struct App {
     player: Player,
     colliders: Vec<Aabb>,
     input: Input,
+    footstep_clock: FootstepClock,
     weapons: Loadout,
     shot_spread_rng: ShotSpreadRng,
     fire_input: FireInput,
@@ -310,6 +311,7 @@ impl App {
         self.player = Player::new();
         self.weapons = Loadout::default();
         self.fire_input = FireInput::default();
+        self.footstep_clock.reset();
         self.combat = Combat::default();
         if mode == SessionMode::TrackingAim {
             self.tracking_bot_count = self.settings.bot_count.min(5);
@@ -930,8 +932,32 @@ impl ApplicationHandler for App {
                     for _ in 0..updates {
                         let input = self.input;
                         self.input.jump = false;
-                        self.player
-                            .move_with_collision(&self.colliders, input, 1. / 60.);
+                        let previous_position = self.player.position;
+                        let movement =
+                            self.player
+                                .move_with_collision(&self.colliders, input, 1. / 60.);
+                        if let Some(audio) = &self.audio {
+                            if movement.landed {
+                                audio.play(Sound::Land);
+                            }
+                        }
+                        let horizontal_distance = glam::Vec2::new(
+                            self.player.position.x - previous_position.x,
+                            self.player.position.z - previous_position.z,
+                        )
+                        .length();
+                        if movement.landed {
+                            self.footstep_clock.reset();
+                        } else if self.footstep_clock.advance(
+                            1. / 60.,
+                            horizontal_distance > 1e-4,
+                            self.player.on_ground,
+                            input.dash,
+                        ) {
+                            if let Some(audio) = &self.audio {
+                                audio.play(Sound::Footstep);
+                            }
+                        }
                         self.weapons.advance(1. / 60., self.fire_input.ads);
                         let view_right =
                             Vec3::new(self.player.yaw.cos(), 0.0, self.player.yaw.sin());
@@ -979,15 +1005,20 @@ impl ApplicationHandler for App {
                 } else {
                     let aspect = w as f32 / h as f32;
                     let (displayed_weapon, switch_offset) = self.weapons.presentation();
-                    liteweight_fps::ui::hud_mesh_with_menu_and_ammo_into(
+                    liteweight_fps::ui::hud_mesh_with_menu_and_ammo_and_hit_marker_strength_into(
                         &mut self.hud_mesh,
                         displayed_weapon,
                         &self.combat,
                         aspect,
                         switch_offset,
-                        self.settings_menu
-                            .then_some((&display_settings, self.pause_selection.selected_index())),
-                        infinite_ammo_active,
+                        liteweight_fps::ui::HudOptions {
+                            menu: self.settings_menu.then_some((
+                                &display_settings,
+                                self.pause_selection.selected_index(),
+                            )),
+                            infinite_ammo: infinite_ammo_active,
+                            hit_marker_strength: self.settings.hit_marker_strength,
+                        },
                     );
                     if self.title_screen {
                         liteweight_fps::ui::title_overlay(
@@ -1225,6 +1256,7 @@ fn main() {
         player: Player::new(),
         colliders: world::arena_colliders_scaled(arena_scale),
         input: Input::default(),
+        footstep_clock: FootstepClock::default(),
         weapons: Loadout::default(),
         shot_spread_rng: ShotSpreadRng::from_entropy(),
         fire_input: FireInput::default(),

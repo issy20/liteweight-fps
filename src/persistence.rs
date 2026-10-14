@@ -392,6 +392,7 @@ pub struct GameSettings {
     pub key_bindings: KeyBindings,
     pub infinite_ammo: bool,
     pub volume: f32,
+    pub hit_marker_strength: f32,
     pub bot_count: u32,
     /// 0 = Static, 1 = Strafe, 2 = Chase, 3 = Mixed.
     pub bot_behavior: u8,
@@ -415,6 +416,7 @@ impl Default for GameSettings {
             key_bindings: KeyBindings::default(),
             infinite_ammo: false,
             volume: 0.7,
+            hit_marker_strength: 1.0,
             bot_count: 5,
             bot_behavior: 3,
             bot_hp: 100,
@@ -508,6 +510,8 @@ impl GameSettings {
         } else if setting == 11 && direction != 0.0 {
             self.fps_limit_index =
                 (i16::from(self.fps_limit_index) + direction.signum() as i16).rem_euclid(7) as u8;
+        } else if setting == 12 {
+            self.hit_marker_strength = (self.hit_marker_strength + direction * 0.1).clamp(0.0, 1.0);
         }
     }
 
@@ -519,6 +523,7 @@ impl GameSettings {
             || !(0.1..=1.0).contains(&settings.ads_sensitivity)
             || !(60.0..=120.0).contains(&settings.fov)
             || !(0.0..=1.0).contains(&settings.volume)
+            || !(0.0..=1.0).contains(&settings.hit_marker_strength)
             || !(1..=20).contains(&settings.bot_count)
             || settings.bot_behavior > 3
             || !(50..=200).contains(&settings.bot_hp)

@@ -29,7 +29,8 @@ movement, aiming, and weapon handling.
 - Session stats track hits, headshots, and kills by weapon.
 - Settings for mouse and ADS sensitivity, FOV, vertical inversion, remappable
   gameplay keys, window resolution, internal resolution scale, fullscreen, VSync,
-  FPS limit, Free Training infinite ammo, audio volume, and BOT parameters.
+  FPS limit, Free Training infinite ammo, audio volume, hit-marker strength, and
+  BOT parameters.
 - Slim, faceless mannequin BOTs with rounded low-poly body parts and an orange
   forehead marker.
 - A HUD with ammo, reticle, and hit markers (white for body hits, yellow for

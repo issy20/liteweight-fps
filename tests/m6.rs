@@ -17,6 +17,10 @@ fn settings_restore_defaults_for_corrupt_or_out_of_range_values() {
     let invalid_bot_config =
         GameSettings::from_json(r#"{"bot_count":99,"bot_behavior":9,"volume":2.0}"#);
     assert_eq!(invalid_bot_config, GameSettings::default());
+    assert_eq!(
+        GameSettings::from_json(r#"{"hit_marker_strength":-0.1}"#),
+        GameSettings::default()
+    );
     assert_eq!(GameSettings::from_json(r#"{"bot_count":20}"#).bot_count, 20);
 }
 
@@ -145,6 +149,20 @@ fn bot_count_behavior_and_volume_settings_are_bounded_and_adjustable() {
     settings.adjust_setting(5, 1.0);
     assert_eq!(settings.bot_count, 20);
     assert_eq!(settings.volume, 1.0);
+}
+
+#[test]
+fn feedback_strength_settings_adjust_clamp_and_round_trip() {
+    let mut settings = GameSettings::default();
+    assert_eq!(settings.hit_marker_strength, 1.0);
+    settings.adjust_setting(12, -1.0);
+    assert!((settings.hit_marker_strength - 0.9).abs() < f32::EPSILON);
+
+    settings.hit_marker_strength = 0.0;
+    settings.adjust_setting(12, -1.0);
+    assert_eq!(settings.hit_marker_strength, 0.0);
+    let restored = GameSettings::from_json(&serde_json::to_string(&settings).unwrap());
+    assert_eq!(restored, settings);
 }
 
 #[test]
@@ -415,6 +433,8 @@ fn pause_menu_selects_resume_sensitivity_and_exit_actions() {
     assert_eq!(menu.toggle_setting_index(), Some(0));
     menu.move_down();
     assert_eq!(menu.setting_index(), Some(5));
+    menu.move_down();
+    assert_eq!(menu.setting_index(), Some(12));
     menu.move_down();
     assert_eq!(menu.setting_index(), Some(3));
     menu.move_down();
@@ -850,4 +870,41 @@ fn kill_hit_marker_keeps_the_larger_heavier_red_strokes() {
         .map(|vertex| vertex.position[0] * aspect)
         .fold(f32::NEG_INFINITY, f32::max);
     assert!((max_x - min_x - 0.097).abs() < 1e-4);
+}
+
+#[test]
+fn hit_marker_strength_scales_the_marker_and_zero_hides_it() {
+    let weapon = liteweight_fps::simulation::weapon::Weapon::default();
+    let mut combat = liteweight_fps::simulation::combat::Combat::new(Vec::new());
+    combat.feedback = 0.12;
+    combat.last_shot = liteweight_fps::simulation::combat::Shot {
+        hit: true,
+        ..Default::default()
+    };
+    let marker_bounds = |strength| {
+        let mesh = liteweight_fps::ui::hud_mesh_with_hit_marker_strength(
+            &weapon,
+            &combat,
+            16.0 / 9.0,
+            0.0,
+            strength,
+        );
+        let marker_vertices = mesh
+            .vertices
+            .iter()
+            .filter(|vertex| vertex.color == [1.0, 0.3, 0.24, 1.0])
+            .collect::<Vec<_>>();
+        if marker_vertices.is_empty() {
+            return None;
+        }
+        Some(marker_vertices.iter().fold(0.0_f32, |extent, vertex| {
+            extent
+                .max(vertex.position[0].abs())
+                .max(vertex.position[1].abs())
+        }))
+    };
+    let full = marker_bounds(1.0).unwrap();
+    let reduced = marker_bounds(0.5).unwrap();
+    assert!(reduced < full);
+    assert!(marker_bounds(0.0).is_none());
 }

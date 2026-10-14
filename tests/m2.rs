@@ -4,8 +4,8 @@ use liteweight_fps::{
     physics::Aabb,
     simulation::{
         player::{
-            Input, DASH_SPEED, EYE_HEIGHT, GRAVITY, JUMP_VELOCITY, PLAYER_HEIGHT, PLAYER_RADIUS,
-            WALK_SPEED,
+            FootstepClock, Input, DASH_SPEED, EYE_HEIGHT, GRAVITY, JUMP_VELOCITY, PLAYER_HEIGHT,
+            PLAYER_RADIUS, WALK_SPEED,
         },
         time::FixedStep,
         Player,
@@ -22,6 +22,46 @@ fn input(left: bool, right: bool, forward: bool, back: bool, dash: bool, jump: b
         dash,
         jump,
     }
+}
+
+#[test]
+fn footstep_clock_sounds_only_for_grounded_movement_and_uses_a_faster_dash_cadence() {
+    let mut walk = FootstepClock::default();
+    assert!(!walk.advance(0.5, false, true, false));
+    assert!(!walk.advance(0.5, true, false, false));
+    for _ in 0..4 {
+        assert!(!walk.advance(0.1, true, true, false));
+    }
+    assert!(walk.advance(0.1, true, true, false));
+
+    let mut dash = FootstepClock::default();
+    let mut dash_steps = 0;
+    let mut walk_steps = 0;
+    let mut comparison_walk = FootstepClock::default();
+    for _ in 0..12 {
+        dash_steps += usize::from(dash.advance(0.1, true, true, true));
+        walk_steps += usize::from(comparison_walk.advance(0.1, true, true, false));
+    }
+    assert!(dash_steps > walk_steps);
+}
+
+#[test]
+fn movement_reports_one_landing_event_after_a_jump() {
+    let mut player = Player::new();
+    let takeoff = player.move_with_collision(
+        &world::arena_colliders(),
+        input(false, false, false, false, false, true),
+        1.0 / 60.0,
+    );
+    assert!(!takeoff.landed);
+
+    let mut landing_events = 0;
+    for _ in 0..180 {
+        let movement =
+            player.move_with_collision(&world::arena_colliders(), Input::default(), 1.0 / 60.0);
+        landing_events += usize::from(movement.landed);
+    }
+    assert_eq!(landing_events, 1);
 }
 
 #[test]

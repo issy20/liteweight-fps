@@ -11,8 +11,54 @@ pub const DASH_TRANSITION_SECONDS: f32 = 0.18;
 pub const DASH_WEAPON_DROP: f32 = 0.055;
 pub const JUMP_VELOCITY: f32 = 4.2;
 pub const GRAVITY: f32 = 9.8;
+pub const WALK_FOOTSTEP_INTERVAL: f32 = 0.45;
+pub const DASH_FOOTSTEP_INTERVAL: f32 = 0.30;
 /// 衝突判定の丸め誤差許容。接触距離の拡大ではなく、f32精度の境界での誤接触を防ぐ。
 const COLLISION_EPSILON: f32 = 1e-4;
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct MovementEvents {
+    pub landed: bool,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct FootstepClock {
+    remaining: f32,
+}
+
+impl Default for FootstepClock {
+    fn default() -> Self {
+        Self {
+            remaining: WALK_FOOTSTEP_INTERVAL,
+        }
+    }
+}
+
+impl FootstepClock {
+    pub fn reset(&mut self) {
+        self.remaining = WALK_FOOTSTEP_INTERVAL;
+    }
+
+    /// Returns true when a step is due. Motion is supplied from actual horizontal displacement.
+    pub fn advance(&mut self, dt: f32, moving: bool, grounded: bool, dashing: bool) -> bool {
+        let interval = if dashing {
+            DASH_FOOTSTEP_INTERVAL
+        } else {
+            WALK_FOOTSTEP_INTERVAL
+        };
+        if !dt.is_finite() || dt <= 0.0 || !moving || !grounded {
+            self.remaining = interval;
+            return false;
+        }
+        self.remaining = self.remaining.min(interval) - dt;
+        if self.remaining <= 0.0 {
+            self.remaining = interval;
+            true
+        } else {
+            false
+        }
+    }
+}
 
 /// 1フレームの入力状態。
 #[derive(Debug, Default, Clone, Copy)]
@@ -158,7 +204,13 @@ impl Player {
         target
     }
     /// 入力とAABB衝突を考慮して移動する。水平方向は軸ごとにスライディングする。
-    pub fn move_with_collision(&mut self, colliders: &[Aabb], input: Input, dt: f32) {
+    pub fn move_with_collision(
+        &mut self,
+        colliders: &[Aabb],
+        input: Input,
+        dt: f32,
+    ) -> MovementEvents {
+        let was_grounded = self.on_ground;
         let horizontal = self.update_horizontal(input, dt);
         if input.jump && self.on_ground {
             self.velocity.y = JUMP_VELOCITY;
@@ -188,6 +240,9 @@ impl Player {
             self.position.y = EYE_HEIGHT;
             self.velocity.y = 0.;
             self.on_ground = true;
+        }
+        MovementEvents {
+            landed: !was_grounded && self.on_ground,
         }
     }
     fn collides(colliders: &[Aabb], center: Vec3) -> bool {

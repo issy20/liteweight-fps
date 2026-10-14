@@ -472,7 +472,7 @@ pub fn settings_overlay(
         aspect,
     );
 
-    let visible = settings_visible_range(selected, 20);
+    let visible = settings_visible_range(selected, 21);
     for (row, setting_index) in visible.clone().enumerate() {
         let center = SETTINGS_ROW_TOP - row as f32 * SETTINGS_ROW_GAP - 0.02;
         let height = 0.070;
@@ -484,7 +484,7 @@ pub fn settings_overlay(
             bottom,
             1.14 * aspect,
             height,
-            if selected_row && setting_index == 19 {
+            if selected_row && setting_index == 20 {
                 [0.88, 0.22, 0.16, 0.23]
             } else if selected_row {
                 [0.92, 0.48, 0.16, 0.22]
@@ -500,7 +500,7 @@ pub fn settings_overlay(
                 bottom,
                 0.008 * aspect,
                 height,
-                if setting_index == 19 {
+                if setting_index == 20 {
                     [1.0, 0.38, 0.28]
                 } else {
                     [1.0, 0.62, 0.25]
@@ -514,6 +514,7 @@ pub fn settings_overlay(
         (1, settings.mouse_sensitivity / 5.0),
         (2, settings.ads_sensitivity),
         (12, settings.volume),
+        (13, settings.hit_marker_strength),
     ] {
         let Some(row) = visible.clone().position(|index| index == setting_index) else {
             continue;
@@ -979,6 +980,10 @@ pub fn settings_text_with_bindings_into(
             "SOUND VOLUME".to_owned(),
             format!("{:.0}%", settings.volume * 100.0),
         ),
+        (
+            "HIT MARKER STRENGTH".to_owned(),
+            format!("{:.0}%", settings.hit_marker_strength * 100.0),
+        ),
         ("BOT COUNT".to_owned(), settings.bot_count.to_string()),
         ("BOT BEHAVIOR".to_owned(), behavior.to_owned()),
         ("BOT HP".to_owned(), settings.bot_hp.to_string()),
@@ -1009,7 +1014,7 @@ pub fn settings_text_with_bindings_into(
         let (label, value) = &rows[index];
         let y = SETTINGS_ROW_TOP - row as f32 * SETTINGS_ROW_GAP;
         let color = if selected == index {
-            if index == 19 {
+            if index == 20 {
                 [1.0, 0.48, 0.38, 1.0]
             } else {
                 active
@@ -1721,6 +1726,39 @@ pub fn hud_mesh_with_menu_and_ammo(
     m
 }
 
+#[derive(Clone, Copy)]
+pub struct HudOptions<'a> {
+    pub menu: Option<(&'a crate::persistence::GameSettings, usize)>,
+    pub infinite_ammo: bool,
+    pub hit_marker_strength: f32,
+}
+
+pub fn hud_mesh_with_hit_marker_strength(
+    weapon: &Weapon,
+    combat: &Combat,
+    aspect: f32,
+    weapon_y_offset: f32,
+    hit_marker_strength: f32,
+) -> Scene {
+    let mut mesh = Scene {
+        vertices: Vec::new(),
+        indices: Vec::new(),
+    };
+    hud_mesh_with_menu_and_ammo_and_hit_marker_strength_into(
+        &mut mesh,
+        weapon,
+        combat,
+        aspect,
+        weapon_y_offset,
+        HudOptions {
+            menu: None,
+            infinite_ammo: false,
+            hit_marker_strength,
+        },
+    );
+    mesh
+}
+
 pub fn hud_mesh_with_menu_and_ammo_into(
     m: &mut Scene,
     weapon: &Weapon,
@@ -1730,6 +1768,33 @@ pub fn hud_mesh_with_menu_and_ammo_into(
     menu: Option<(&crate::persistence::GameSettings, usize)>,
     infinite_ammo: bool,
 ) {
+    hud_mesh_with_menu_and_ammo_and_hit_marker_strength_into(
+        m,
+        weapon,
+        combat,
+        aspect,
+        weapon_y_offset,
+        HudOptions {
+            menu,
+            infinite_ammo,
+            hit_marker_strength: 1.0,
+        },
+    );
+}
+
+pub fn hud_mesh_with_menu_and_ammo_and_hit_marker_strength_into(
+    m: &mut Scene,
+    weapon: &Weapon,
+    combat: &Combat,
+    aspect: f32,
+    weapon_y_offset: f32,
+    options: HudOptions<'_>,
+) {
+    let HudOptions {
+        menu,
+        infinite_ammo,
+        hit_marker_strength,
+    } = options;
     m.vertices.clear();
     m.indices.clear();
     m.vertices.reserve(400);
@@ -1911,7 +1976,12 @@ pub fn hud_mesh_with_menu_and_ammo_into(
         }
         rect(m, -0.002, -0.002, 0.004, 0.004, [1.; 3], aspect);
     }
-    if combat.feedback > 0.0 && combat.last_shot.hit {
+    let hit_marker_strength = if hit_marker_strength.is_finite() {
+        hit_marker_strength.clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
+    if combat.feedback > 0.0 && combat.last_shot.hit && hit_marker_strength > 0.0 {
         let color = if combat.last_shot.killed {
             [1.0, 0.05, 0.06]
         } else if combat.last_shot.headshot {
@@ -1924,6 +1994,9 @@ pub fn hud_mesh_with_menu_and_ammo_into(
         } else {
             (0.02, 0.033, 0.0035)
         };
+        let inner = inner * hit_marker_strength;
+        let outer = outer * hit_marker_strength;
+        let thickness = thickness * hit_marker_strength;
         for (x, y) in [(-1.0, -1.0), (-1.0, 1.0), (1.0, -1.0), (1.0, 1.0)] {
             stroke_segment(
                 m,
@@ -1978,21 +2051,21 @@ mod tests {
     #[test]
     fn settings_scroll_window_keeps_selection_visible_at_each_end() {
         assert_eq!(SETTINGS_VISIBLE_ROWS, 11);
-        assert_eq!(settings_visible_range(0, 20), 0..11);
-        assert_eq!(settings_visible_range(10, 20), 5..16);
-        assert_eq!(settings_visible_range(19, 20), 9..20);
+        assert_eq!(settings_visible_range(0, 21), 0..11);
+        assert_eq!(settings_visible_range(10, 21), 5..16);
+        assert_eq!(settings_visible_range(20, 21), 10..21);
     }
 
     #[test]
     fn change_mode_and_quit_rows_remain_visible_and_distinct() {
         let settings = crate::persistence::GameSettings::default();
-        let change_mode = settings_text_with_bindings(&settings, 18, [1280, 720], false, 0, false);
+        let change_mode = settings_text_with_bindings(&settings, 19, [1280, 720], false, 0, false);
         assert!(change_mode
             .vertices
             .iter()
             .any(|vertex| vertex.color == [1.0, 0.65, 0.24, 1.0]));
 
-        let quit_game = settings_text_with_bindings(&settings, 19, [1280, 720], false, 0, false);
+        let quit_game = settings_text_with_bindings(&settings, 20, [1280, 720], false, 0, false);
         assert!(quit_game
             .vertices
             .iter()
@@ -2335,8 +2408,8 @@ mod tests {
     fn resume_and_quit_highlights_cover_the_full_text_height() {
         for (selected, expected_min_y, expected_max_y, color) in [
             (0, 0.44, 0.50, [0.92, 0.48, 0.16, 0.22]),
-            (18, -0.41, -0.36, [0.92, 0.48, 0.16, 0.22]),
-            (19, -0.51, -0.45, [0.88, 0.22, 0.16, 0.23]),
+            (19, -0.41, -0.36, [0.92, 0.48, 0.16, 0.22]),
+            (20, -0.51, -0.45, [0.88, 0.22, 0.16, 0.23]),
         ] {
             let mut mesh = crate::Scene {
                 vertices: Vec::new(),
