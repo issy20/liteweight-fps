@@ -9,14 +9,27 @@ default-run = "liteweight-fps"
 ab_glyph = "0.2"
 bytemuck = { version = "1", features = ["derive"] }
 glam = "0.29"
-miniquad = "0.4.11"
+miniquad = { version = "0.4.11", optional = true }
 pollster = "0.4"
 rodio = { version = "0.20", default-features = false }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-sysinfo = "0.33"
+sysinfo = { version = "0.33", optional = true }
 wgpu = "24"
 winit = "0.30"
+
+[features]
+# Enables the M0 benchmark binaries and RSS memory sampling. Not needed to build
+# or run the game; keeping it off avoids compiling miniquad and sysinfo.
+bench = ["dep:miniquad", "dep:sysinfo"]
+
+[[bin]]
+name = "bench-wgpu"
+required-features = ["bench"]
+
+[[bin]]
+name = "bench-miniquad"
+required-features = ["bench"]
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = ["Win32_Storage_FileSystem"] }

@@ -76,6 +76,9 @@ The first build compiles all dependencies and takes a few minutes. The audio
 device is optional: if none is available, the game reports the reason and
 continues silently.
 
+For convenience, `scripts/run.sh` (macOS/Linux) and `scripts/run.ps1` (Windows)
+check for Rust and run `cargo run --release --locked` for you.
+
 | Input | Action |
 | --- | --- |
 | Up / Down, Enter | Navigate and select menu items |
@@ -99,9 +102,11 @@ controls pixel density while preserving that aspect ratio.
 
 ## Build and test
 
-The project uses `wgpu` 24, `winit` 0.30, and Miniquad 0.4.11. Dependencies are
-locked in `Cargo.lock`. The M0 renderer comparison uses these pinned versions as
-its baseline; results from different library versions should not be mixed.
+The project uses `wgpu` 24 and `winit` 0.30 for the game; Miniquad 0.4.11 is
+used only by the benchmark binary behind the optional `bench` feature.
+Dependencies are locked in `Cargo.lock`. The M0 renderer comparison uses these
+pinned versions as its baseline; results from different library versions should
+not be mixed.
 
 On Linux, install a C compiler, `pkg-config`, ALSA development files, and the
 Wayland/XKB development libraries. For Debian or Ubuntu:
@@ -120,7 +125,14 @@ Run formatting, lint, tests, and a release build with:
 cargo fmt --check
 cargo clippy --locked --all-targets -- -D warnings
 cargo test --locked --all-targets
-cargo build --locked --release --bins
+cargo build --locked --release --bin liteweight-fps
+```
+
+The `bench` feature is only needed for the M0 benchmark binaries and RSS memory
+sampling. Build them with:
+
+```sh
+cargo build --locked --release --features bench --bins
 ```
 
 GPU integration tests are ignored during a normal `cargo test` run. To run them
@@ -200,9 +212,11 @@ separate from performance measurements.
 The M0 benchmarks remain available as a renderer regression baseline. M1/M2
 can be compared against the same scene, camera, and measurement tool using
 `--benchmark`. This mode does not run M5 gameplay systems such as weapons, BOTs,
-HUD, or audio, so it does not measure overall game performance.
+HUD, or audio, so it does not measure overall game performance. The benchmark
+binaries are gated behind the `bench` feature, so build them first:
 
 ```sh
+cargo build --locked --release --features bench --bins
 ./target/release/bench-wgpu --warmup 5 --seconds 30 --output results/m0-reference
 ./target/release/liteweight-fps --benchmark --warmup 5 --seconds 30 --output results/m1-candidate
 ```

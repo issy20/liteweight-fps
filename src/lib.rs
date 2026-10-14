@@ -240,8 +240,11 @@ pub struct Run {
     previous_present: Option<Instant>,
     startup_ms: Option<f64>,
     saved: bool,
+    #[cfg(feature = "bench")]
     memory_system: sysinfo::System,
+    #[cfg(feature = "bench")]
     memory: Vec<(f64, u64)>,
+    #[cfg(feature = "bench")]
     last_memory: Option<Instant>,
 }
 impl Run {
@@ -262,8 +265,11 @@ impl Run {
             previous_present: None,
             startup_ms: None,
             saved: false,
+            #[cfg(feature = "bench")]
             memory_system: sysinfo::System::new(),
+            #[cfg(feature = "bench")]
             memory: Vec::new(),
+            #[cfg(feature = "bench")]
             last_memory: None,
         }
     }
@@ -309,22 +315,25 @@ impl Run {
             );
         }
         // 同じ頻度で現在プロセスだけを取得。計測コストは次フレーム間隔に含まれる。
-        if elapsed >= self.options.warmup
-            && self
-                .last_memory
-                .is_none_or(|t| now.duration_since(t).as_secs_f64() >= 1.)
+        #[cfg(feature = "bench")]
         {
-            if let Ok(pid) = sysinfo::get_current_pid() {
-                self.memory_system.refresh_processes_specifics(
-                    sysinfo::ProcessesToUpdate::Some(&[pid]),
-                    true,
-                    sysinfo::ProcessRefreshKind::nothing().with_memory(),
-                );
-                if let Some(p) = self.memory_system.process(pid) {
-                    self.memory.push((elapsed, p.memory()));
+            if elapsed >= self.options.warmup
+                && self
+                    .last_memory
+                    .is_none_or(|t| now.duration_since(t).as_secs_f64() >= 1.)
+            {
+                if let Ok(pid) = sysinfo::get_current_pid() {
+                    self.memory_system.refresh_processes_specifics(
+                        sysinfo::ProcessesToUpdate::Some(&[pid]),
+                        true,
+                        sysinfo::ProcessRefreshKind::nothing().with_memory(),
+                    );
+                    if let Some(p) = self.memory_system.process(pid) {
+                        self.memory.push((elapsed, p.memory()));
+                    }
                 }
+                self.last_memory = Some(now);
             }
-            self.last_memory = Some(now);
         }
         elapsed >= self.options.warmup + self.options.seconds
     }
@@ -355,6 +364,13 @@ impl Run {
             .iter()
             .map(|f| f.cpu_submit_ms)
             .collect();
+        #[cfg(feature = "bench")]
+        let (rss_samples, rss_max) = (
+            serde_json::json!(self.memory),
+            serde_json::json!(self.memory.iter().map(|x| x.1).max()),
+        );
+        #[cfg(not(feature = "bench"))]
+        let (rss_samples, rss_max) = (serde_json::Value::Null, serde_json::Value::Null);
         let report = serde_json::json!({
             "schema": 1, "scene": "m0-cubes-v1", "backend": self.backend,
             "os": std::env::consts::OS, "arch": std::env::consts::ARCH,
@@ -363,7 +379,7 @@ impl Run {
             "frame_count": samples.len(), "frame_statistics": stats(&samples),
             "cpu_submit_mean_ms": (!cpu.is_empty()).then(|| cpu.iter().sum::<f64>() / cpu.len() as f64),
             "gpu_frame_ms": null, "startup_to_first_submit_return_ms": self.startup_ms,
-            "rss_samples_bytes": self.memory, "rss_sampled_max_bytes": self.memory.iter().map(|x| x.1).max(),
+            "rss_samples_bytes": rss_samples, "rss_sampled_max_bytes": rss_max,
             "display_pixels_initial": self.measurement.size, "display_pixels_final": self.measurement.actual_size,
             "draw_calls_per_frame": 2, "triangles": scene(self.options.dummies).indices.len()/3,
             "mouse": self.mouse, "notes": self.notes,
