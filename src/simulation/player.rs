@@ -15,7 +15,37 @@ pub const WALK_FOOTSTEP_INTERVAL: f32 = 0.45;
 pub const DASH_FOOTSTEP_INTERVAL: f32 = 0.30;
 /// 衝突判定の丸め誤差許容。接触距離の拡大ではなく、f32精度の境界での誤接触を防ぐ。
 const COLLISION_EPSILON: f32 = 1e-4;
-const MAX_STEP_HEIGHT: f32 = 0.22;
+const DEFAULT_STEP_HEIGHT: f32 = 0.22;
+const DEFAULT_GROUND_SNAP_DISTANCE: f32 = 0.22;
+
+/// Developer-tunable movement values. Defaults preserve the current game feel.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct MovementTuning {
+    pub walk_speed: f32,
+    pub dash_speed: f32,
+    pub jump_velocity: f32,
+    pub gravity: f32,
+    /// Multiplier applied to movement input while airborne; 0 disables mid-air steering.
+    pub air_control: f32,
+    /// Maximum vertical rise that grounded movement can step onto.
+    pub step_height: f32,
+    /// Maximum drop followed while staying grounded on stairs and ramps.
+    pub ground_snap_distance: f32,
+}
+
+impl Default for MovementTuning {
+    fn default() -> Self {
+        Self {
+            walk_speed: WALK_SPEED,
+            dash_speed: DASH_SPEED,
+            jump_velocity: JUMP_VELOCITY,
+            gravity: GRAVITY,
+            air_control: 1.0,
+            step_height: DEFAULT_STEP_HEIGHT,
+            ground_snap_distance: DEFAULT_GROUND_SNAP_DISTANCE,
+        }
+    }
+}
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct MovementEvents {
@@ -89,6 +119,7 @@ pub struct Player {
     pub velocity: Vec3,
     pub on_ground: bool,
     pub dash_progress: f32,
+    pub movement_tuning: MovementTuning,
 }
 impl Default for Player {
     fn default() -> Self {
@@ -99,6 +130,7 @@ impl Default for Player {
             velocity: Vec3::ZERO,
             on_ground: true,
             dash_progress: 0.0,
+            movement_tuning: MovementTuning::default(),
         }
     }
 }
@@ -157,11 +189,11 @@ impl Player {
     pub fn move_with_input(&mut self, input: Input, dt: f32) {
         self.update_horizontal(input, dt);
         if input.jump && self.on_ground {
-            self.velocity.y = JUMP_VELOCITY;
+            self.velocity.y = self.movement_tuning.jump_velocity;
             self.on_ground = false;
         }
         if !self.on_ground {
-            self.velocity.y -= GRAVITY * dt;
+            self.velocity.y -= self.movement_tuning.gravity * dt;
         }
         self.position += self.velocity * dt;
         if self.position.y <= EYE_HEIGHT {
@@ -177,7 +209,16 @@ impl Player {
         } else {
             (self.dash_progress - dash_step).max(0.0)
         };
-        let speed = if input.dash { DASH_SPEED } else { WALK_SPEED };
+        let speed = if input.dash {
+            self.movement_tuning.dash_speed
+        } else {
+            self.movement_tuning.walk_speed
+        };
+        let speed = if self.on_ground {
+            speed
+        } else {
+            speed * self.movement_tuning.air_control.max(0.0)
+        };
         let mut input_dir = Vec3::ZERO;
         if input.forward {
             input_dir.z -= 1.;
@@ -214,7 +255,7 @@ impl Player {
         let was_grounded = self.on_ground;
         let horizontal = self.update_horizontal(input, dt);
         if input.jump && self.on_ground {
-            self.velocity.y = JUMP_VELOCITY;
+            self.velocity.y = self.movement_tuning.jump_velocity;
             self.on_ground = false;
         }
         // 水平は軸ごとに移動して衝突を解決し、残った方向へ滑る。
@@ -231,7 +272,7 @@ impl Player {
                     .filter(|collider| {
                         collider.min.y <= current_foot + COLLISION_EPSILON
                             && collider.max.y > current_foot + COLLISION_EPSILON
-                            && collider.max.y <= current_foot + MAX_STEP_HEIGHT
+                            && collider.max.y <= current_foot + self.movement_tuning.step_height
                             && Self::overlaps_player_footprint(collider, self.position)
                     })
                     .map(|collider| collider.max.y)
@@ -255,7 +296,8 @@ impl Player {
                 .iter()
                 .filter(|collider| {
                     collider.max.y <= current_foot + COLLISION_EPSILON
-                        && collider.max.y >= current_foot - MAX_STEP_HEIGHT
+                        && collider.max.y
+                            >= current_foot - self.movement_tuning.ground_snap_distance
                         && Self::overlaps_player_footprint(collider, self.position)
                 })
                 .map(|collider| collider.max.y)
@@ -267,7 +309,7 @@ impl Player {
             }
         }
         if !self.on_ground {
-            self.velocity.y -= GRAVITY * dt;
+            self.velocity.y -= self.movement_tuning.gravity * dt;
         }
         self.position.y += self.velocity.y * dt;
         if Self::collides(colliders, self.body_center()) {

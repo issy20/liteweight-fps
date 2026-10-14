@@ -4,8 +4,8 @@ use liteweight_fps::{
     physics::Aabb,
     simulation::{
         player::{
-            FootstepClock, Input, DASH_SPEED, EYE_HEIGHT, GRAVITY, JUMP_VELOCITY, PLAYER_HEIGHT,
-            PLAYER_RADIUS, WALK_SPEED,
+            FootstepClock, Input, MovementTuning, DASH_SPEED, EYE_HEIGHT, GRAVITY, JUMP_VELOCITY,
+            PLAYER_HEIGHT, PLAYER_RADIUS, WALK_SPEED,
         },
         time::FixedStep,
         Player,
@@ -421,6 +421,65 @@ fn jump_adds_initial_velocity_and_gravity_brings_player_back_to_ground() {
     p.on_ground = false;
     p.move_with_input(input(false, false, false, false, false, false), dt);
     assert!((p.velocity.y + GRAVITY * dt).abs() < 1e-3);
+}
+
+#[test]
+fn player_uses_configurable_jump_velocity_and_gravity() {
+    let mut player = Player::new();
+    player.movement_tuning = MovementTuning {
+        jump_velocity: 6.0,
+        gravity: 12.0,
+        ..MovementTuning::default()
+    };
+
+    player.move_with_input(input(false, false, false, false, false, true), 1.0 / 60.0);
+
+    assert!((player.velocity.y - (6.0 - 12.0 / 60.0)).abs() < 1e-3);
+}
+
+#[test]
+fn air_control_tuning_can_disable_horizontal_steering_while_airborne() {
+    let mut player = Player::new();
+    player.movement_tuning.air_control = 0.0;
+    player.position.y += 1.0;
+    player.on_ground = false;
+
+    player.move_with_input(input(false, false, true, false, false, false), 1.0 / 60.0);
+
+    assert_eq!(player.position.z, 0.0);
+}
+
+#[test]
+fn step_height_tuning_controls_which_barriers_can_be_climbed() {
+    let barrier = Aabb::new(Vec3::new(-1.0, 0.0, -1.0), Vec3::new(1.0, 0.4, 1.0));
+    let colliders = [barrier];
+    let mut player = Player::new();
+    player.position.z = 1.0;
+    player.movement_tuning.step_height = 0.5;
+
+    for _ in 0..30 {
+        player.move_with_collision(
+            &colliders,
+            input(false, false, true, false, false, false),
+            1.0 / 60.0,
+        );
+    }
+
+    assert!(player.foot_height() >= 0.4 - 1e-4);
+    assert!(player.on_ground);
+}
+
+#[test]
+fn ground_snap_distance_tuning_controls_following_lower_steps() {
+    let lower_floor = Aabb::new(Vec3::new(-2.0, -0.2, -2.0), Vec3::new(2.0, 0.0, 2.0));
+    let colliders = [lower_floor];
+    let mut player = Player::new();
+    player.position.y = EYE_HEIGHT + 0.15;
+    player.movement_tuning.ground_snap_distance = 0.1;
+
+    player.move_with_collision(&colliders, Input::default(), 1.0 / 60.0);
+
+    assert!(!player.on_ground);
 }
 
 #[test]
