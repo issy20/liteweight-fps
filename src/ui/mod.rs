@@ -1144,8 +1144,7 @@ pub fn version_label() -> String {
 
 /// Minimal font/license/copyright credit shown on the title screen.
 /// Restricted to ASCII so the embedded font atlas can render every glyph.
-pub const CREDITS_LABEL: &str =
-    "Font Cantarell (SIL OFL)  Code MIT/Apache-2.0  (c) 2026 liteweight-fps contributors";
+pub const CREDITS_LABEL: &str = "Font Cantarell (SIL OFL)  Code MIT/Apache-2.0  (c) 2026 issy20";
 
 pub fn title_text(selected: usize, viewport: [u32; 2]) -> TextMesh {
     let mut mesh = TextMesh::default();
@@ -2521,6 +2520,7 @@ mod tests {
         );
         assert!(super::CREDITS_LABEL.contains("Cantarell"));
         assert!(super::CREDITS_LABEL.contains("MIT/Apache-2.0"));
+        assert!(super::CREDITS_LABEL.contains("issy20"));
         // The embedded atlas only covers ASCII plus the infinity glyph.
         assert!(super::CREDITS_LABEL.is_ascii());
         assert!(super::version_label().is_ascii());
