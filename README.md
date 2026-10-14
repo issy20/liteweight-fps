@@ -21,21 +21,22 @@ movement, aiming, and weapon handling.
   | Sniper rifle | 5 | 50 RPM | 100 | 2.8 s |
 
   Headshots deal twice the body damage. The sniper rifle's ADS-in and ADS-out
-  times are 350 ms and 200 ms.
+  times are 400 ms and 200 ms.
 - Three BOT behaviors: Static, Strafe, and Chase. BOT decisions run at 20 Hz;
   movement uses the fixed simulation timestep.
 - Separate head and body hitboxes. A defeated BOT respawns after two seconds at
   a free location at least 8 m from the player.
-- Session stats track hits, headshots, and kills by weapon.
+- A session tracks the current kill count, shown in the HUD.
 - Settings for mouse and ADS sensitivity, FOV, vertical inversion, remappable
   gameplay keys, window resolution, internal resolution scale, fullscreen, VSync,
   FPS limit, Free Training infinite ammo, audio volume, hit-marker strength, and
   BOT parameters.
 - Slim, faceless mannequin BOTs with rounded low-poly body parts and an orange
   forehead marker.
-- A HUD with ammo, reticle, and hit markers (white for body hits, yellow for
-  headshots, and red for kills), along with hit reactions, muzzle flashes,
-  impact effects, simple weapon models, and synthesized sound effects.
+- A HUD with ammo, reticle, and hit markers (thin red strokes for body hits,
+  warmer red for headshots, and larger, heavier red strokes for kills), along
+  with hit reactions, muzzle flashes, impact effects, simple weapon models,
+  and synthesized sound effects.
 - A resizable window and fullscreen toggle. The product renderer adjusts its
   internal render-target aspect and camera projection to the display, avoiding
   black bars without distorting or cropping the scene.
@@ -67,7 +68,7 @@ cargo run --release
 | R | Reload; reload takes priority over firing and is ignored when full (rebindable) |
 | Esc | Pause and release the mouse; go back or resume in menus (rebindable) |
 | Left / Right, Enter | Adjust the selected setting / confirm a menu item |
-| Q / window close button | Quit |
+| Window close button | Close the game (or choose Quit in the title menu or Exit in the pause menu) |
 
 You can resize the window by dragging its edges. Rendering pauses while the
 window is minimized, hidden, or has zero size, and resumes when it becomes
