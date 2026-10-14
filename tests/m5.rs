@@ -479,17 +479,17 @@ fn world_mesh_builder_reuses_cpu_buffer_capacity() {
 }
 
 #[test]
-fn headshots_and_body_hits_update_independent_score_counts() {
+fn body_and_head_hits_report_damage_and_headshot_status() {
     let mut combat = Combat::new(vec![Bot::new(Vec3::new(0.0, 0.0, -5.0))]);
     let body = combat.shoot(Vec3::new(0.0, 1.0, 0.0), -Vec3::Z, &[], 25);
     assert!(body.hit && !body.headshot);
+    assert!(!body.killed);
     assert_eq!(combat.targets[0].hp, 75);
 
     let head = combat.shoot(Vec3::new(0.0, 1.8, 0.0), -Vec3::Z, &[], 25);
     assert!(head.hit && head.headshot);
+    assert!(!head.killed);
     assert_eq!(combat.targets[0].hp, 25);
-    assert_eq!(combat.hits, 2);
-    assert_eq!(combat.headshots, 1);
     assert_eq!(combat.kills, 0);
 }
 

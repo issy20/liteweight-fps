@@ -6,9 +6,6 @@ use std::{
     sync::atomic::{AtomicU64, Ordering},
 };
 
-use crate::simulation::game_mode::MatchStats;
-
-pub const MAX_SAVED_RESULTS: usize = 50;
 const DISPLAY_RESOLUTIONS: [(u32, u32); 4] = [(960, 540), (1280, 720), (1600, 900), (1920, 1080)];
 const RENDER_SCALES: [f32; 4] = [0.5, 0.67, 0.75, 1.0];
 const FPS_LIMITS: [u16; 7] = [30, 60, 90, 120, 144, 240, 0];
@@ -301,80 +298,6 @@ fn write_file_atomically(path: &Path, data: &[u8]) -> io::Result<()> {
         io::ErrorKind::AlreadyExists,
         "could not reserve a temporary file for atomic write",
     ))
-}
-
-#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
-pub struct ResultRecord {
-    pub recorded_at_unix_seconds: u64,
-    pub stats: MatchStats,
-}
-
-pub fn save_result(stats: MatchStats) -> Result<(), String> {
-    let path = GameSettings::path()
-        .map(|path| path.with_file_name("results.json"))
-        .ok_or_else(|| "結果保存先を特定できません".to_owned())?;
-    let recorded_at_unix_seconds = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs();
-    save_result_to(
-        &path,
-        ResultRecord {
-            recorded_at_unix_seconds,
-            stats,
-        },
-    )
-}
-
-pub fn load_results_from(path: &std::path::Path) -> Result<Vec<ResultRecord>, String> {
-    match fs::read_to_string(path) {
-        Ok(json) => Ok(serde_json::from_str(&json).unwrap_or_default()),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(Vec::new()),
-        Err(error) => Err(error.to_string()),
-    }
-}
-
-fn corrupt_results_backup_path(path: &Path) -> PathBuf {
-    let file_name = path
-        .file_name()
-        .unwrap_or_else(|| std::ffi::OsStr::new("results.json"))
-        .to_string_lossy();
-    loop {
-        let sequence = TEMP_FILE_SEQUENCE.fetch_add(1, Ordering::Relaxed);
-        let backup = path.with_file_name(format!(
-            "{file_name}.corrupt.{}.{}",
-            std::process::id(),
-            sequence
-        ));
-        if !backup.exists() {
-            return backup;
-        }
-    }
-}
-
-pub fn save_result_to(path: &std::path::Path, record: ResultRecord) -> Result<(), String> {
-    let parent = path
-        .parent()
-        .ok_or_else(|| "結果保存先が不正です".to_owned())?;
-    fs::create_dir_all(parent).map_err(|error| error.to_string())?;
-    let mut records = match fs::read_to_string(path) {
-        Ok(json) => match serde_json::from_str(&json) {
-            Ok(records) => records,
-            Err(_) => {
-                let backup = corrupt_results_backup_path(path);
-                fs::rename(path, backup).map_err(|error| error.to_string())?;
-                Vec::new()
-            }
-        },
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Vec::new(),
-        Err(error) => return Err(error.to_string()),
-    };
-    records.push(record);
-    if records.len() > MAX_SAVED_RESULTS {
-        records.drain(..records.len() - MAX_SAVED_RESULTS);
-    }
-    let data = serde_json::to_vec_pretty(&records).map_err(|error| error.to_string())?;
-    write_file_atomically(path, &data).map_err(|error| error.to_string())
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]

@@ -195,9 +195,6 @@ pub struct Combat {
     pub targets: Vec<Bot>,
     pub last_shot: Shot,
     pub feedback: f32,
-    pub shots: u32,
-    pub hits: u32,
-    pub headshots: u32,
     pub kills: u32,
     pub spawn_cursor: usize,
     pub arena_scale: f32,
@@ -224,9 +221,6 @@ impl Combat {
             targets,
             last_shot: Shot::default(),
             feedback: 0.0,
-            shots: 0,
-            hits: 0,
-            headshots: 0,
             kills: 0,
             spawn_cursor: 0,
             arena_scale: 1.0,
@@ -347,9 +341,6 @@ impl Combat {
             .collect();
         self.last_shot = Shot::default();
         self.feedback = 0.0;
-        self.shots = 0;
-        self.hits = 0;
-        self.headshots = 0;
         self.kills = 0;
         self.spawn_cursor = 0;
     }
@@ -530,11 +521,8 @@ impl Combat {
             shot.hit = true;
             shot.headshot = head;
             shot.killed = bot.apply_damage(damage * if head { 2 } else { 1 });
-            self.hits += 1;
-            self.headshots += u32::from(head);
             self.kills += u32::from(shot.killed);
         }
-        self.shots += 1;
         self.last_shot = shot;
         self.feedback = 0.12;
         shot
@@ -672,7 +660,6 @@ impl Combat {
             shot.position = aim_point;
             shot.impact = true;
         }
-        self.shots += 1;
         self.last_shot = shot;
         self.feedback = 0.12;
         shot
@@ -697,8 +684,6 @@ impl Combat {
             shot.hit = true;
             shot.headshot = headshot;
             shot.killed = self.targets[index].apply_damage(damage * if headshot { 2 } else { 1 });
-            self.hits += 1;
-            self.headshots += u32::from(headshot);
             self.kills += u32::from(shot.killed);
         }
         shot

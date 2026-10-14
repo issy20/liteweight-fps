@@ -1,9 +1,5 @@
 use liteweight_fps::engine::text::FontAtlas;
 use liteweight_fps::persistence::GameSettings;
-use liteweight_fps::simulation::{
-    game_mode::{SessionMode, TrainingSession},
-    weapon::WeaponKind,
-};
 use liteweight_fps::ui::menu::{PauseMenuAction, PauseSelection, TitleMenuAction, TitleSelection};
 
 #[test]
@@ -468,94 +464,6 @@ fn fullscreen_setting_is_a_toggle_menu_item_and_is_shown_in_settings() {
     };
     let text = liteweight_fps::ui::settings_text(&settings, 8, [1280, 720]);
     assert!(!text.vertices.is_empty());
-}
-
-#[test]
-fn session_results_track_rates_and_weapon_breakdown_with_zero_safe_rates() {
-    let mut session = TrainingSession::new(SessionMode::FreeTraining);
-    assert_eq!(session.stats().accuracy(), 0.0);
-    assert_eq!(session.stats().headshot_rate(), 0.0);
-
-    session.record_shot(WeaponKind::AssaultRifle, true, false, false);
-    session.record_shot(WeaponKind::AssaultRifle, true, true, true);
-    session.record_shot(WeaponKind::Sniper, false, false, false);
-
-    let stats = session.stats();
-    assert_eq!(
-        (stats.shots, stats.hits, stats.headshots, stats.kills),
-        (3, 2, 1, 1)
-    );
-    assert_eq!(stats.accuracy(), 2.0 / 3.0);
-    assert_eq!(stats.headshot_rate(), 0.5);
-    assert_eq!(stats.for_weapon(WeaponKind::AssaultRifle).shots, 2);
-    assert_eq!(stats.for_weapon(WeaponKind::Sniper).shots, 1);
-    assert_eq!(stats.for_weapon(WeaponKind::Pistol).shots, 0);
-}
-
-#[test]
-fn saved_session_result_history_round_trips_and_keeps_newest_entries() {
-    let path = std::env::temp_dir().join(format!(
-        "liteweight-fps-results-{}.json",
-        std::process::id()
-    ));
-    let _ = std::fs::remove_file(&path);
-    for timestamp in 1..=55 {
-        liteweight_fps::persistence::save_result_to(
-            &path,
-            liteweight_fps::persistence::ResultRecord {
-                recorded_at_unix_seconds: timestamp,
-                stats: Default::default(),
-            },
-        )
-        .unwrap();
-    }
-    let records = liteweight_fps::persistence::load_results_from(&path).unwrap();
-    assert_eq!(records.len(), 50);
-    assert_eq!(records.first().unwrap().recorded_at_unix_seconds, 6);
-    assert_eq!(records.last().unwrap().recorded_at_unix_seconds, 55);
-    std::fs::remove_file(path).unwrap();
-}
-
-#[test]
-fn saving_after_corrupt_result_history_quarantines_it_and_recovers() {
-    let path = std::env::temp_dir().join(format!(
-        "liteweight-fps-corrupt-results-{}.json",
-        std::process::id()
-    ));
-    let _ = std::fs::remove_file(&path);
-    let original = b"[{ broken result history";
-    std::fs::write(&path, original).unwrap();
-
-    assert!(liteweight_fps::persistence::load_results_from(&path)
-        .unwrap()
-        .is_empty());
-    let record = liteweight_fps::persistence::ResultRecord {
-        recorded_at_unix_seconds: 123,
-        stats: Default::default(),
-    };
-    liteweight_fps::persistence::save_result_to(&path, record).unwrap();
-    assert_eq!(
-        liteweight_fps::persistence::load_results_from(&path)
-            .unwrap()
-            .as_slice(),
-        &[record]
-    );
-
-    let file_name = path.file_name().unwrap().to_string_lossy();
-    let backup = std::fs::read_dir(path.parent().unwrap())
-        .unwrap()
-        .filter_map(Result::ok)
-        .map(|entry| entry.path())
-        .find(|candidate| {
-            candidate.file_name().is_some_and(|name| {
-                name.to_string_lossy()
-                    .starts_with(&format!("{file_name}.corrupt."))
-            })
-        })
-        .expect("corrupt history should be preserved beside the new history");
-    assert_eq!(std::fs::read(&backup).unwrap(), original);
-    std::fs::remove_file(path).unwrap();
-    std::fs::remove_file(backup).unwrap();
 }
 
 #[test]

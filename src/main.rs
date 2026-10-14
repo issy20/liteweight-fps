@@ -9,7 +9,7 @@ use liteweight_fps::{
     physics::Aabb,
     simulation::{
         combat::Combat,
-        game_mode::{SessionMode, TrainingSession},
+        game_mode::SessionMode,
         player::{FootstepClock, Input},
         time::FixedStep,
         weapon::{FireInput, Loadout, ShotSpreadRng, WeaponKind},
@@ -128,7 +128,7 @@ struct App {
     combat: Combat,
     settings: GameSettings,
     tracking_bot_count: u32,
-    session: TrainingSession,
+    session: SessionMode,
     title_screen: bool,
     settings_menu: bool,
     settings_from_title: bool,
@@ -167,7 +167,7 @@ impl App {
         }
         let weapon = self.weapons.active();
         let mut shot_direction = weapon.shot_direction(view_direction);
-        if self.session.mode().hip_fire_spread_enabled() && weapon.ads_progress <= 0.0 {
+        if self.session.hip_fire_spread_enabled() && weapon.ads_progress <= 0.0 {
             shot_direction = self
                 .shot_spread_rng
                 .apply(shot_direction, weapon.data.hip_fire_spread_radians);
@@ -200,13 +200,11 @@ impl App {
             &self.colliders,
             damage,
         );
-        if self.session.mode().recoil_enabled() {
+        if self.session.recoil_enabled() {
             self.player.apply_recoil(recoil_kick);
         } else {
             self.weapons.active_mut().visual_recoil = 0.0;
         }
-        self.session
-            .record_shot(kind, shot.hit, shot.headshot, shot.killed);
         if let Some(audio) = &self.audio {
             audio.play(match kind {
                 WeaponKind::AssaultRifle => Sound::Fire,
@@ -229,10 +227,7 @@ impl App {
         event_loop.exit();
     }
     fn adjust_runtime_setting(&mut self, setting: usize, direction: f32) {
-        if setting == 3
-            && !self.settings_from_title
-            && self.session.mode() == SessionMode::TrackingAim
-        {
+        if setting == 3 && !self.settings_from_title && self.session == SessionMode::TrackingAim {
             self.tracking_bot_count =
                 (self.tracking_bot_count as f32 + direction.signum()).clamp(1.0, 5.0) as u32;
         } else {
@@ -345,7 +340,7 @@ impl App {
                 }
             }
         }
-        self.session = TrainingSession::new(mode);
+        self.session = mode;
         self.title_screen = false;
         self.settings_menu = false;
         self.settings_from_title = false;
@@ -355,13 +350,12 @@ impl App {
     }
     fn infinite_ammo_active(&self) -> bool {
         self.session
-            .mode()
             .infinite_ammo_enabled(self.settings.infinite_ammo)
     }
     fn apply_runtime_setting(&mut self, setting: usize) {
         match setting {
             3 | 4 | 6 | 7 | 8 => {
-                if !self.settings_from_title && self.session.mode() == SessionMode::TrackingAim {
+                if !self.settings_from_title && self.session == SessionMode::TrackingAim {
                     self.combat.configure_tracking_bots(
                         self.tracking_bot_count,
                         self.settings.bot_hp,
@@ -456,10 +450,9 @@ impl App {
         if let Some(r) = &self.renderer {
             let (w, h) = r.internal_size();
             let title = format!(
-                "liteweight-fps | {w}×{h} | {} {}/{} | Bots {}/{} | Kills {} | Hits {}/{} | 1:Pistol 2:AR 3:Sniper LMB:Fire RMB:ADS R:Reload Esc:Settings",
+                "liteweight-fps | {w}×{h} | {} {}/{} | Bots {}/{} | Kills {} | 1:Pistol 2:AR 3:Sniper LMB:Fire RMB:ADS R:Reload Esc:Settings",
                 self.weapons.active().kind.label(), self.weapons.active().ammo, self.weapons.active().data.magazine,
-                self.combat.targets.iter().filter(|bot| bot.alive).count(), self.combat.targets.len(), self.combat.kills,
-                self.combat.hits, self.combat.shots
+                self.combat.targets.iter().filter(|bot| bot.alive).count(), self.combat.targets.len(), self.combat.kills
             );
             if title != self.title {
                 r.window.set_title(&title);
@@ -1001,7 +994,7 @@ impl ApplicationHandler for App {
                 let r = self.renderer.as_mut().unwrap();
                 let (w, h) = r.internal_size();
                 let mut display_settings = self.settings.clone();
-                if !self.settings_from_title && self.session.mode() == SessionMode::TrackingAim {
+                if !self.settings_from_title && self.session == SessionMode::TrackingAim {
                     display_settings.bot_count = self.tracking_bot_count;
                 }
                 let matrix = if let Some(run) = &self.benchmark {
@@ -1053,7 +1046,7 @@ impl ApplicationHandler for App {
                         liteweight_fps::ui::game_hud_text_into(
                             &mut self.text_mesh,
                             liteweight_fps::ui::GameHudInfo {
-                                mode: self.session.mode(),
+                                mode: self.session,
                                 weapon: self.weapons.active_kind(),
                                 ammo: self.weapons.active().ammo,
                                 magazine: self.weapons.active().data.magazine,
@@ -1267,7 +1260,7 @@ fn main() {
         combat: Combat::default(),
         settings,
         tracking_bot_count,
-        session: TrainingSession::new(SessionMode::FreeTraining),
+        session: SessionMode::FreeTraining,
         title_screen,
         settings_menu: false,
         settings_from_title: false,
